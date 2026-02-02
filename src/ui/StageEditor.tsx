@@ -145,6 +145,7 @@ export function StageEditor({
   const [backlash, setBacklash] = useState(0);
   const [undercut, setUndercut] = useState(true);
   const [backlashPlanetsOnly, setBacklashPlanetsOnly] = useState(false);
+  const [cameraProjection, setCameraProjection] = useState<"orthographic" | "perspective">("orthographic");
   const [gearPanelOpen, setGearPanelOpen] = useState(false);
   const skipExampleClearRef = useRef(false);
   const SLIDER_MIN_POS = -9;
@@ -168,6 +169,11 @@ export function StageEditor({
     left: drawerTabWidth + 6,
     right: 0,
   }));
+
+  useEffect(() => {
+    setCameraResetToken((t) => t + 1);
+    setCameraZoomFitToken((t) => t + 1);
+  }, [cameraProjection]);
   const resultsDrawerHeight = isMobile ? Math.min(420, Math.max(220, Math.round(viewportHeight * 0.55))) : 0;
   const resultsDrawerClosedY = resultsDrawerHeight;
   const resultsTabWidth = 90;
@@ -418,6 +424,7 @@ const [viewFrac, setViewFrac] = useState(0.70);
     setBacklash(0);
     setUndercut(true);
     setBacklashPlanetsOnly(false);
+    setCameraProjection("orthographic");
     setGearPanelOpen(false);
     onExampleLoaded?.(null);
   }, [clearExampleSelectionIfNeeded, defaultAnnulus, defaultSolar, onExampleLoaded, resetCameraDefaults]);
@@ -1355,7 +1362,7 @@ const resultMemo = useMemo(() => {
               />
             </div>
 
-            <div style={fieldRowNoX}>
+            <div style={{ ...fieldRowNoX, gridTemplateColumns: "1fr minmax(0, 1fr)" }}>
               <label style={label}>
                 {lang === "en" ? "Interference (undercutting)" : "Interferência (adelgaçamento)"}
               </label>
@@ -1366,6 +1373,18 @@ const resultMemo = useMemo(() => {
                   onChange={(e) => setUndercut(e.target.checked)}
                 />
               </div>
+            </div>
+
+            <div style={fieldRowNoX}>
+              <label style={label}>{strings[lang].camera}</label>
+              <select
+                style={{ ...input, width: "25ch", justifySelf: "end" }}
+                value={cameraProjection}
+                onChange={(e) => setCameraProjection(e.target.value as "orthographic" | "perspective")}
+              >
+                <option value="orthographic">{strings[lang].projectionOrthographic}</option>
+                <option value="perspective">{strings[lang].projectionPerspective}</option>
+              </select>
             </div>
 
             <div style={{ ...small, marginTop: -4 }}>
@@ -1598,6 +1617,7 @@ const resultMemo = useMemo(() => {
           cameraZoomMultiplier={cameraZoomMultiplier}
           cameraResetToken={cameraResetToken}
           cameraZoomFitToken={cameraZoomFitToken}
+          cameraProjection={cameraProjection}
           gearModule={gearModule}
           gearPressureDeg={gearPressureDeg}
           gearHelixDeg={gearHelixDeg}

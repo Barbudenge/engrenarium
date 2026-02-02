@@ -31,6 +31,9 @@ appTitle: "Engrenarium",
     backlash: "Folga",
     backlashPlanetsOnly: "só planetas",
     moduleHint: "Alterar o módulo não muda a renderização na tela, mas muda o diâmetro ao exportar a geometria.",
+    camera: "Câmera",
+    projectionOrthographic: "Projeção ortográfica",
+    projectionPerspective: "Projeção em perspectiva",
 
     // Botões / ações
     remove: "Remover",
@@ -116,6 +119,9 @@ appTitle: "Engrenarium",
     backlash: "Backlash",
     backlashPlanetsOnly: "Planets only",
     moduleHint: "Changing the module does not affect on-screen rendering, but it does change the diameter when exporting the geometry.",
+    camera: "Camera",
+    projectionOrthographic: "Orthographic projection",
+    projectionPerspective: "Perspective projection",
 
     // Buttons / actions
     remove: "Remove",

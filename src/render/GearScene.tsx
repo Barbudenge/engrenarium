@@ -100,6 +100,31 @@ const PHASE_ORIENT = -Math.PI / 2;  // -90°: leva o “0” da geometria (eixo 
 const CARRIER_COLOR = "#e4e4e4";
 const BASE_CAM_DIR = new Vector3(-2, 0, 1.65);
 const BASE_CAM_DIST_FACTOR = BASE_CAM_DIR.length();
+const MIN_FIT_RADIUS = 1e-3;
+const BASE_FOV_DEG = 25;
+
+function computeOrthoZoom(viewHeight: number, fittedR: number, cameraZoomMultiplier: number) {
+  const safeR = Math.max(MIN_FIT_RADIUS, fittedR);
+  const viewH = Math.abs(viewHeight);
+  if (!Number.isFinite(viewH) || viewH <= 0) {
+    return 1;
+  }
+  const camZ = Math.max(40, safeR * 2) * (cameraZoomMultiplier ?? 1);
+  const desiredDist = camZ * BASE_CAM_DIST_FACTOR;
+  const desiredHeight = 2 * desiredDist * Math.tan((BASE_FOV_DEG * DEG) / 2);
+  const baseZoom = viewH / Math.max(MIN_FIT_RADIUS, desiredHeight);
+  return baseZoom;
+}
+
+function syncOrthoFrustum(camera: any, size: { width: number; height: number }) {
+  if (!camera || !size) return;
+  const width = Math.max(1, size.width);
+  const height = Math.max(1, size.height);
+  camera.left = -width / 2;
+  camera.right = width / 2;
+  camera.top = height / 2;
+  camera.bottom = -height / 2;
+}
 
 function radToDegList(arr: number[] | undefined): string {
   if (!arr || arr.length === 0) return "[]";
@@ -780,23 +805,45 @@ function ZoomAdjust({
   cameraZoomMultiplier: number;
 }) {
   const { camera } = useThree();
+  const size = useThree((state: any) => (state as any).size as { width: number; height: number });
   const controls = useThree((state: any) => (state as any).controls as any | undefined);
   const lastResetRef = React.useRef(cameraResetToken);
   const lastFitRef = React.useRef(cameraZoomFitToken);
   const lastZoomRef = React.useRef(cameraZoomMultiplier);
+  const lastSizeRef = React.useRef({ width: size?.width ?? 0, height: size?.height ?? 0 });
+  const firstRunRef = React.useRef(true);
 
   React.useEffect(() => {
     const resetChanged = lastResetRef.current !== cameraResetToken;
     const fitChanged = lastFitRef.current !== cameraZoomFitToken;
     const zoomChanged = lastZoomRef.current !== cameraZoomMultiplier;
+    const sizeChanged =
+      lastSizeRef.current.width !== (size?.width ?? 0) ||
+      lastSizeRef.current.height !== (size?.height ?? 0);
     lastResetRef.current = cameraResetToken;
     lastFitRef.current = cameraZoomFitToken;
     lastZoomRef.current = cameraZoomMultiplier;
-    if (!resetChanged && !fitChanged && !zoomChanged) return;
+    lastSizeRef.current = { width: size?.width ?? 0, height: size?.height ?? 0 };
+    const shouldRun = firstRunRef.current || resetChanged || fitChanged || zoomChanged || sizeChanged;
+    firstRunRef.current = false;
+    if (!shouldRun) return;
 
     const targetVec = controls?.target
       ? controls.target.clone()
       : new Vector3(0, 0, 0);
+    if ((camera as any)?.isOrthographicCamera) {
+      syncOrthoFrustum(camera, size);
+      const nextZoom = computeOrthoZoom(size?.height ?? 0, fittedR, cameraZoomMultiplier);
+      if (Number.isFinite(nextZoom) && nextZoom > 0) {
+        camera.zoom = nextZoom;
+        camera.updateProjectionMatrix();
+      }
+      if (controls && typeof controls.target?.set === "function") {
+        controls.target.set(targetVec.x, targetVec.y, targetVec.z);
+        controls.update?.();
+      }
+      return;
+    }
     const dir = new Vector3().subVectors(camera.position, targetVec);
     if (dir.length() < 1e-6) dir.copy(BASE_CAM_DIR);
 
@@ -810,7 +857,7 @@ function ZoomAdjust({
       controls.target.set(targetVec.x, targetVec.y, targetVec.z);
       controls.update?.();
     }
-  }, [cameraResetToken, cameraZoomMultiplier, fittedR, camera, controls]);
+  }, [cameraResetToken, cameraZoomMultiplier, fittedR, camera, controls, size?.width, size?.height, cameraZoomFitToken]);
 
   return null;
 }
@@ -1194,6 +1241,7 @@ export function GearScene({
   cameraZoomMultiplier = 1,
   cameraResetToken = 0,
   cameraZoomFitToken = 0,
+  cameraProjection = "orthographic",
   gearModule = DEFAULT_MODULE_MM,
   gearPressureDeg = 20,
   gearHelixDeg = 0,
@@ -1212,6 +1260,7 @@ export function GearScene({
   cameraZoomMultiplier?: number;
   cameraResetToken?: number | string;
   cameraZoomFitToken?: number | string;
+  cameraProjection?: "orthographic" | "perspective";
   gearModule?: number;
   gearPressureDeg?: number;
   gearHelixDeg?: number;
@@ -1404,6 +1453,7 @@ export function GearScene({
 
   const lastCameraResetRef = React.useRef(cameraResetToken);
   const lastZoomRef = React.useRef(cameraZoomMultiplier);
+  const isOrthographic = cameraProjection === "orthographic";
 
   // Mantém o ref alinhado com o que o usuário faz nos controles
   React.useEffect(() => {
@@ -1437,6 +1487,15 @@ export function GearScene({
     if (!resetChanged) return;
 
     const targetVec = controls?.target ? controls.target.clone() : new Vector3(...(cameraStateRef.current?.target ?? [0, 0, 0]));
+    if ((camera as any)?.isOrthographicCamera) {
+      if (controls && typeof controls.target?.set === "function") {
+        controls.target.set(targetVec.x, targetVec.y, targetVec.z);
+        controls.update?.();
+      }
+      cameraStateRef.current = { pos: [camera.position.x, camera.position.y, camera.position.z], target: [targetVec.x, targetVec.y, targetVec.z] };
+      return;
+    }
+
     const dir = new Vector3().subVectors(camera.position, targetVec);
     if (dir.length() < 1e-6) dir.copy(BASE_CAM_DIR);
 
@@ -1490,8 +1549,10 @@ return (
   <GearProfileContext.Provider value={gearProfile}>
   <div style={{ position: "relative", width: "100%", height: "100%" }}>
     <Canvas
+      key={isOrthographic ? "cam-ortho" : "cam-persp"}
       dpr={[1, 2]}
-      camera={{ position: cameraStateRef.current.pos, fov: 25 }}
+      orthographic={isOrthographic}
+      camera={isOrthographic ? { position: cameraStateRef.current.pos, zoom: 1 } : { position: cameraStateRef.current.pos, fov: 25 }}
       style={{ width: "100%", height: "100%" }}
     >
       <Suspense fallback={null}>
