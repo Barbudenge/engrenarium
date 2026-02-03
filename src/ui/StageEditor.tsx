@@ -400,7 +400,7 @@ export function StageEditor({
 
   const [decimals, setDecimals] = useState<number>(2);
   const [montagem, setMontagem] = useState<Record<number, MontagemStatus>>({});
-// Altura relativa da cena 3D (parte de cima da coluna direita)
+// Altura relativa da cena 3D (parte de cima da coluna direita).
 const [viewFrac, setViewFrac] = useState(0.70);
 
   const resetToDefaults = useCallback(() => {
