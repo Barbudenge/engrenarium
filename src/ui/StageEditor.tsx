@@ -43,7 +43,7 @@ function cloneRatio(ratio: UIRatio): UIRatio {
 }
 
 export type StageEditorHandle = {
-  savePlanetary: () => Promise<void>;
+  savePlanetary: () => void;
   openLoadDialog: () => void;
 };
 
@@ -565,56 +565,19 @@ function startDrag(e: React.MouseEvent) {
     decimals,
   ]);
 
-  const savePlanetary = useCallback(async () => {
+  const savePlanetary = useCallback(() => {
     const payload = buildSavePayload();
     const json = JSON.stringify(payload, null, 2);
-    const suggestedName = makeSaveFilename(payload.savedAt);
-    const showSaveFilePicker = (window as any)?.showSaveFilePicker as
-      | ((options?: any) => Promise<any>)
-      | undefined;
-
-    if (showSaveFilePicker) {
-      try {
-        const handle = await showSaveFilePicker({
-          suggestedName,
-          types: [
-            {
-              description: "Engrenarium",
-              accept: { "application/json": [".engr"] },
-            },
-          ],
-        });
-        const writable = await handle.createWritable();
-        await writable.write(json);
-        await writable.close();
-        return;
-      } catch (err) {
-        if ((err as any)?.name === "AbortError") return;
-        console.error(err);
-      }
-    }
-
-    const fallbackName =
-      window.prompt(
-        lang === "en"
-          ? "File name (without path):"
-          : "Nome do arquivo (sem caminho):",
-        suggestedName
-      ) || "";
-    if (!fallbackName.trim()) return;
-
     const blob = new Blob([json], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = fallbackName.trim().endsWith(".engr")
-      ? fallbackName.trim()
-      : `${fallbackName.trim()}.engr`;
+    link.download = makeSaveFilename(payload.savedAt);
     document.body.appendChild(link);
     link.click();
     link.remove();
     window.setTimeout(() => URL.revokeObjectURL(url), 500);
-  }, [buildSavePayload, lang, makeSaveFilename]);
+  }, [buildSavePayload, makeSaveFilename]);
 
   const openLoadDialog = useCallback(() => {
     if (!fileInputRef.current) return;

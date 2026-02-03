@@ -143,7 +143,7 @@ export default function App() {
         </button>
         <button
           style={headerButtonStyle}
-          onClick={() => void stageEditorRef.current?.savePlanetary()}
+          onClick={() => stageEditorRef.current?.savePlanetary()}
         >
           {strings[lang].savePlanetary}
         </button>
@@ -180,24 +180,31 @@ export default function App() {
               }}
             >
               <div style={{ fontSize: 14, fontWeight: 600 }}>{strings[lang].examples}</div>
-              {(["EX1", "EX2", "EX3", "EX4"] as const).map((id) => (
-                <button
-                  key={id}
-                  style={{
-                    border: "1px solid var(--btn-border)",
-                    background: lastLoadedExample === id ? "#60a5fa30" : "var(--btn-bg)",
-                    color: "var(--text)",
-                    borderRadius: 6,
-                    padding: isMobile ? "5px 8px" : "6px 9px",
-                    cursor: "pointer",
-                    fontWeight: lastLoadedExample === id ? 700 : 500,
-                    fontSize: isMobile ? 12 : 14,
-                  }}
-                  onClick={() => setExampleToLoad(id)}
-                >
-                  {strings[lang][id.toLowerCase() as "ex1" | "ex2" | "ex3" | "ex4"]}
-                </button>
-              ))}
+              <select
+                style={{
+                  border: "1px solid var(--btn-border)",
+                  background: "var(--btn-bg)",
+                  color: "var(--text)",
+                  borderRadius: 6,
+                  padding: isMobile ? "5px 8px" : "6px 9px",
+                  cursor: "pointer",
+                  fontWeight: 600,
+                  fontSize: isMobile ? 12 : 14,
+                  minWidth: 110,
+                }}
+                value={lastLoadedExample ?? ""}
+                onChange={(e) => {
+                  const value = e.target.value as "EX1" | "EX2" | "EX3" | "EX4" | "";
+                  if (!value) return;
+                  setExampleToLoad(value);
+                }}
+              >
+                <option value="">{strings[lang].selectExample}</option>
+                <option value="EX1">{strings[lang].ex1}</option>
+                <option value="EX2">{strings[lang].ex2}</option>
+                <option value="EX3">{strings[lang].ex3}</option>
+                <option value="EX4">{strings[lang].ex4}</option>
+              </select>
             </div>
 
             {/* seletor de idioma */}
