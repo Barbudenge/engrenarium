@@ -142,6 +142,7 @@ export function StageEditor({
   const [gearPressureDeg, setGearPressureDeg] = useState(20);
   const [gearWidth, setGearWidth] = useState(5);
   const [gearHelixDeg, setGearHelixDeg] = useState(0);
+  const [ringThickness, setRingThickness] = useState(3);
   const [backlash, setBacklash] = useState(0);
   const [undercut, setUndercut] = useState(true);
   const [backlashPlanetsOnly, setBacklashPlanetsOnly] = useState(false);
@@ -421,6 +422,7 @@ const [viewFrac, setViewFrac] = useState(0.70);
     setGearPressureDeg(20);
     setGearWidth(5);
     setGearHelixDeg(0);
+    setRingThickness(3);
     setBacklash(0);
     setUndercut(true);
     setBacklashPlanetsOnly(false);
@@ -1338,6 +1340,25 @@ const resultMemo = useMemo(() => {
             </div>
 
             <div style={fieldRowNoX}>
+              <label style={label}>{strings[lang].ringThickness}</label>
+              <input
+                style={input}
+                type="number"
+                min={0}
+                step={1}
+                value={ringThickness}
+                onChange={(e) => {
+                  const v = Number(e.target.value);
+                  if (Number.isNaN(v)) {
+                    setRingThickness(3);
+                  } else {
+                    setRingThickness(Math.max(0, v));
+                  }
+                }}
+              />
+            </div>
+
+            <div style={fieldRowNoX}>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <label style={label}>{strings[lang].backlash}</label>
                 <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12 }}>
@@ -1622,6 +1643,7 @@ const resultMemo = useMemo(() => {
           gearPressureDeg={gearPressureDeg}
           gearHelixDeg={gearHelixDeg}
           gearWidth={gearWidth}
+          ringThickness={ringThickness}
           backlash={backlash}
           undercut={undercut}
           backlashPlanetsOnly={backlashPlanetsOnly}

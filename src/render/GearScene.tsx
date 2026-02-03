@@ -14,6 +14,7 @@ const DEG = Math.PI / 180;
 const DEFAULT_PRESSURE_ANGLE = 20 * DEG; // evolvente padrão
 const DEFAULT_MODULE_MM = 1;             // módulo padrão
 const DEFAULT_EXTRUDE_DEPTH = 5;         // profundidade base da extrusão em Z
+const DEFAULT_RING_THICKNESS = 3;        // espessura do anel (em múltiplos do módulo)
 
 type GearProfile = {
   moduleMm: number;
@@ -21,6 +22,7 @@ type GearProfile = {
   extrudeDepth: number;
   backlash: number;
   undercut: boolean;
+  ringThickness: number;
 };
 
 const GearProfileContext = React.createContext<GearProfile>({
@@ -29,6 +31,7 @@ const GearProfileContext = React.createContext<GearProfile>({
   extrudeDepth: DEFAULT_EXTRUDE_DEPTH,
   backlash: 0,
   undercut: true,
+  ringThickness: DEFAULT_RING_THICKNESS,
 });
 
 function useGearProfile(): GearProfile {
@@ -409,7 +412,8 @@ function makeInvoluteInternalGeometry(
   pressureAngleRad: number,
   extrudeDepth: number,
   backlash = 0,
-  undercut = true
+  undercut = true,
+  ringThickness = DEFAULT_RING_THICKNESS
 ) {
   // 1) Gera o contorno de uma ENGRENAGEM EXTERNA (mesmo z, módulo, ângulo)
   //    Isso é exatamente o “negativo” que precisamos para o dente interno.
@@ -418,7 +422,8 @@ function makeInvoluteInternalGeometry(
 
   // 2) Cria o corpo do anel como um círculo externo “grosso”
   const addendum = 1 * m;
-  const R_OUT = rp + addendum + 3 * m;    // espessura do anel (ajuste à vontade)
+  const ringRim = Math.max(0, ringThickness) * m;
+  const R_OUT = rp + addendum + ringRim;    // espessura do anel (ajuste à vontade)
   const OUT_SEG = 128;
 
   const shape = new THREE.Shape();        // externo CCW
@@ -466,7 +471,7 @@ function Gear3DInternal({
   backlashOverride?: number;
   opacity?: number;
 }) {
-  const { moduleMm, pressureAngleRad, extrudeDepth, backlash, undercut } = useGearProfile();
+  const { moduleMm, pressureAngleRad, extrudeDepth, backlash, undercut, ringThickness } = useGearProfile();
   const activeBacklash = backlashOverride != null ? backlashOverride : backlash;
   const { geo, rp } = React.useMemo(
     () => {
@@ -476,12 +481,13 @@ function Gear3DInternal({
         pressureAngleRad,
         extrudeDepth,
         activeBacklash,
-        undercut
+        undercut,
+        ringThickness
       );
       applyHelixTwist(geo as any, helixAngleRad ?? 0, extrudeDepth, rp);
       return { geo, rp };
     },
-    [teeth, moduleMm, pressureAngleRad, extrudeDepth, helixAngleRad, activeBacklash, undercut]
+    [teeth, moduleMm, pressureAngleRad, extrudeDepth, helixAngleRad, activeBacklash, undercut, ringThickness]
   );
   const meshRef = React.useRef<THREE.Mesh>(null!);
   const sXY = rVisual / rp;
@@ -1246,6 +1252,7 @@ export function GearScene({
   gearPressureDeg = 20,
   gearHelixDeg = 0,
   gearWidth = DEFAULT_EXTRUDE_DEPTH,
+  ringThickness = DEFAULT_RING_THICKNESS,
   backlash = 0,
   undercut = true,
   backlashPlanetsOnly = false,
@@ -1265,6 +1272,7 @@ export function GearScene({
   gearPressureDeg?: number;
   gearHelixDeg?: number;
   gearWidth?: number;
+  ringThickness?: number;
   backlash?: number;
   undercut?: boolean;
   backlashPlanetsOnly?: boolean;
@@ -1274,6 +1282,7 @@ export function GearScene({
 
   const safeModuleMm = gearModule && gearModule > 0 ? gearModule : DEFAULT_MODULE_MM;
   const safeWidth = gearWidth && gearWidth > 0 ? gearWidth : DEFAULT_EXTRUDE_DEPTH;
+  const safeRingThickness = Number.isFinite(ringThickness) ? Math.max(0, ringThickness) : DEFAULT_RING_THICKNESS;
   const safePressureDeg = Number.isFinite(gearPressureDeg) ? gearPressureDeg : 20;
   const pressureAngleRad = safePressureDeg * DEG;
   const helixAngleRadBase = (Number.isFinite(gearHelixDeg) ? gearHelixDeg : 0) * DEG;
@@ -1290,8 +1299,9 @@ export function GearScene({
       extrudeDepth: safeWidth,
       backlash: appliedBacklash,
       undercut: safeUndercut,
+      ringThickness: safeRingThickness,
     }),
-    [safeModuleMm, pressureAngleRad, safeWidth, appliedBacklash, safeUndercut]
+    [safeModuleMm, pressureAngleRad, safeWidth, appliedBacklash, safeUndercut, safeRingThickness]
   );
 
   const [hiddenParts, setHiddenParts] = React.useState<Set<string>>(new Set());
