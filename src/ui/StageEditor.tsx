@@ -1,7 +1,8 @@
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Model, Element, Mesh, Constraint } from "../math/types";
 import { solveGearSystem } from "../math/solver";
 import { validarMontagem, type MontagemStatus } from "../math/topology";
+import { computeMaxPlanetCopies } from "../math/planetCopies";
 import { strings, type Lang, type StringKey } from "./i18n";
 import { GearScene } from "../render/GearScene";
 import { useIsMobile } from "../lib/useIsMobile";
@@ -39,6 +40,64 @@ function cloneCouplings(couplings: UICoupling[]): UICoupling[] {
 
 function cloneRatio(ratio: UIRatio): UIRatio {
   return { ...ratio };
+}
+
+export type StageEditorHandle = {
+  savePlanetary: () => Promise<void>;
+  openLoadDialog: () => void;
+};
+
+type StageEditorProps = {
+  lang?: Lang;
+  exampleToLoad?: "EX1" | "EX2" | "EX3" | "EX4" | null;
+  onExampleLoaded?: (id: "EX1" | "EX2" | "EX3" | "EX4" | null) => void;
+  resetSignal?: number;
+};
+
+type PlanetarySaveV1 = {
+  version: 1;
+  app: "Engrenarium";
+  savedAt: string;
+  data: {
+    stages: UIStage[];
+    speeds: UISpeed[];
+    ratio: UIRatio;
+    couplings: UICoupling[];
+    gear: {
+      module: number;
+      pressureDeg: number;
+      width: number;
+      helixDeg: number;
+      ringThickness: number;
+      backlash: number;
+      undercut: boolean;
+      backlashPlanetsOnly: boolean;
+    };
+    cameraProjection: "orthographic" | "perspective";
+    timeScale: number;
+    decimals: number;
+  };
+};
+
+const SAVE_VERSION = 1 as const;
+const SAVE_EXTENSION = "engr";
+
+function getMaxPlanetCopies(st: UIStage): number {
+  return computeMaxPlanetCopies({
+    solarZ: st.solarZ,
+    annulusZ: st.annulusZ,
+    planetsZ: st.planetsZ,
+  });
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function clampPlanetCopies(st: UIStage, maxCopies?: number): number {
+  const max = Math.max(1, maxCopies ?? getMaxPlanetCopies(st));
+  const current = Math.max(1, Math.round(st.planetCopies ?? 1));
+  return Math.max(1, Math.min(max, current));
 }
 
 /** ---------- Estilos ---------- */
@@ -88,22 +147,18 @@ const fieldRow: React.CSSProperties = { display: "grid", gridTemplateColumns: "1
 const fieldRowNoX: React.CSSProperties = { display: "grid", gridTemplateColumns: "1fr 7.5rem", gap: 8, alignItems: "center", minWidth: 0, marginBottom: "0.75rem" };
 
 /** ---------- Componente ---------- */
-export function StageEditor({
+export const StageEditor = React.forwardRef<StageEditorHandle, StageEditorProps>(function StageEditor({
   lang = "pt" as Lang,
   exampleToLoad,
   onExampleLoaded,
   resetSignal,
-}: {
-  lang?: Lang;
-  exampleToLoad?: "EX1" | "EX2" | "EX3" | "EX4" | null;
-  onExampleLoaded?: (id: "EX1" | "EX2" | "EX3" | "EX4" | null) => void;
-  resetSignal?: number;
-}) {
+}, ref) {
   const isMobile = useIsMobile();
   const t = (key: StringKey) => strings[lang][key];
   const [timeScale, setTimeScale] = useState(1.0);
   const [stages, setStages] = useState<UIStage[]>([{ id: 1, solarZ: 40, planetsZ: [20], annulusZ: 80, planetCopies: 3 }]);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // ==== defaults a partir do primeiro estágio ====
   const firstId = 1;
@@ -142,7 +197,7 @@ export function StageEditor({
   const [gearPressureDeg, setGearPressureDeg] = useState(20);
   const [gearWidth, setGearWidth] = useState(5);
   const [gearHelixDeg, setGearHelixDeg] = useState(0);
-  const [ringThickness, setRingThickness] = useState(3);
+  const [ringThickness, setRingThickness] = useState(5);
   const [backlash, setBacklash] = useState(0);
   const [undercut, setUndercut] = useState(true);
   const [backlashPlanetsOnly, setBacklashPlanetsOnly] = useState(false);
@@ -422,7 +477,7 @@ const [viewFrac, setViewFrac] = useState(0.70);
     setGearPressureDeg(20);
     setGearWidth(5);
     setGearHelixDeg(0);
-    setRingThickness(3);
+    setRingThickness(5);
     setBacklash(0);
     setUndercut(true);
     setBacklashPlanetsOnly(false);
@@ -460,6 +515,291 @@ function startDrag(e: React.MouseEvent) {
   const DEFAULT_TEMPLATE: StageTemplate = { solarZ: 24, planetsZ: [12], annulusZ: 48, lastSolarZ: 24, lastAnnulusZ: 48 };
   const lastTemplateRef = React.useRef<StageTemplate>(JSON.parse(JSON.stringify(DEFAULT_TEMPLATE)));
 
+  const makeSaveFilename = useCallback((savedAt: string) => {
+    const date = new Date(savedAt);
+    const pad = (v: number) => String(v).padStart(2, "0");
+    const stamp = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}_${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`;
+    return `planetaria-${stamp}.${SAVE_EXTENSION}`;
+  }, []);
+
+  const buildSavePayload = useCallback((): PlanetarySaveV1 => {
+    return {
+      version: SAVE_VERSION,
+      app: "Engrenarium",
+      savedAt: new Date().toISOString(),
+      data: {
+        stages: cloneStages(stages),
+        speeds: cloneSpeeds(speeds),
+        ratio: cloneRatio(ratio),
+        couplings: cloneCouplings(couplings),
+        gear: {
+          module: gearModule,
+          pressureDeg: gearPressureDeg,
+          width: gearWidth,
+          helixDeg: gearHelixDeg,
+          ringThickness,
+          backlash,
+          undercut,
+          backlashPlanetsOnly,
+        },
+        cameraProjection,
+        timeScale,
+        decimals,
+      },
+    };
+  }, [
+    stages,
+    speeds,
+    ratio,
+    couplings,
+    gearModule,
+    gearPressureDeg,
+    gearWidth,
+    gearHelixDeg,
+    ringThickness,
+    backlash,
+    undercut,
+    backlashPlanetsOnly,
+    cameraProjection,
+    timeScale,
+    decimals,
+  ]);
+
+  const savePlanetary = useCallback(async () => {
+    const payload = buildSavePayload();
+    const json = JSON.stringify(payload, null, 2);
+    const suggestedName = makeSaveFilename(payload.savedAt);
+    const showSaveFilePicker = (window as any)?.showSaveFilePicker as
+      | ((options?: any) => Promise<any>)
+      | undefined;
+
+    if (showSaveFilePicker) {
+      try {
+        const handle = await showSaveFilePicker({
+          suggestedName,
+          types: [
+            {
+              description: "Engrenarium",
+              accept: { "application/json": [".engr"] },
+            },
+          ],
+        });
+        const writable = await handle.createWritable();
+        await writable.write(json);
+        await writable.close();
+        return;
+      } catch (err) {
+        if ((err as any)?.name === "AbortError") return;
+        console.error(err);
+      }
+    }
+
+    const fallbackName =
+      window.prompt(
+        lang === "en"
+          ? "File name (without path):"
+          : "Nome do arquivo (sem caminho):",
+        suggestedName
+      ) || "";
+    if (!fallbackName.trim()) return;
+
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = fallbackName.trim().endsWith(".engr")
+      ? fallbackName.trim()
+      : `${fallbackName.trim()}.engr`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 500);
+  }, [buildSavePayload, lang, makeSaveFilename]);
+
+  const openLoadDialog = useCallback(() => {
+    if (!fileInputRef.current) return;
+    fileInputRef.current.value = "";
+    fileInputRef.current.click();
+  }, []);
+
+  const normalizePlanetaryPayload = useCallback((rawText: string): PlanetarySaveV1 | null => {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(rawText);
+    } catch {
+      return null;
+    }
+
+    const wrapper = isRecord(parsed) && isRecord(parsed.data) ? parsed : { data: parsed };
+    if (!isRecord(wrapper) || !isRecord(wrapper.data)) return null;
+    if (wrapper.version != null && wrapper.version !== 1) return null;
+
+    const data = wrapper.data as Record<string, unknown>;
+
+    const rawStages = Array.isArray(data.stages) ? data.stages : null;
+    if (!rawStages || rawStages.length === 0) return null;
+    const stages = rawStages
+      .map((raw) => {
+        if (!isRecord(raw)) return null;
+        const id = Number(raw.id);
+        if (!Number.isFinite(id)) return null;
+        const planetsRaw = Array.isArray(raw.planetsZ) ? raw.planetsZ : [];
+        const planetsZ = planetsRaw
+          .map((p) => Number(p))
+          .filter((p) => Number.isFinite(p) && p > 0);
+        if (planetsZ.length === 0) return null;
+        const solarCandidate = (raw as any).solarZ;
+        const annulusCandidate = (raw as any).annulusZ;
+        const solarZ =
+          solarCandidate == null ? null : Number.isFinite(Number(solarCandidate)) ? Number(solarCandidate) : null;
+        const annulusZ =
+          annulusCandidate == null ? null : Number.isFinite(Number(annulusCandidate)) ? Number(annulusCandidate) : null;
+        const lastSolarZ = Number.isFinite(Number((raw as any).lastSolarZ)) ? Number((raw as any).lastSolarZ) : undefined;
+        const lastAnnulusZ = Number.isFinite(Number((raw as any).lastAnnulusZ)) ? Number((raw as any).lastAnnulusZ) : undefined;
+        const planetCopies = Number.isFinite(Number((raw as any).planetCopies))
+          ? Math.max(1, Math.round(Number((raw as any).planetCopies)))
+          : undefined;
+        return {
+          id,
+          solarZ,
+          planetsZ,
+          annulusZ,
+          lastSolarZ,
+          lastAnnulusZ,
+          planetCopies,
+        } as UIStage;
+      })
+      .filter(Boolean) as UIStage[];
+
+    if (stages.length === 0) return null;
+
+    const speedsRaw = Array.isArray(data.speeds) ? data.speeds : [];
+    const speeds = speedsRaw
+      .map((raw) => {
+        if (!isRecord(raw)) return null;
+        const value = Number((raw as any).value);
+        if (!Number.isFinite(value)) return null;
+        const varId = typeof (raw as any).var === "string" ? String((raw as any).var) : undefined;
+        return { var: varId, value } as UISpeed;
+      })
+      .filter(Boolean) as UISpeed[];
+
+    if (speeds.length === 0) {
+      speeds.push({ var: undefined, value: 0 });
+    }
+
+    const ratioRaw = isRecord(data.ratio) ? data.ratio : {};
+    const ratio: UIRatio = {
+      entrada: typeof (ratioRaw as any).entrada === "string" ? String((ratioRaw as any).entrada) : undefined,
+      saida: typeof (ratioRaw as any).saida === "string" ? String((ratioRaw as any).saida) : undefined,
+    };
+
+    const couplingsRaw = Array.isArray(data.couplings) ? data.couplings : [];
+    const couplings = couplingsRaw
+      .map((raw) => {
+        if (!isRecord(raw)) return null;
+        const a = typeof (raw as any).a === "string" ? String((raw as any).a) : undefined;
+        const b = typeof (raw as any).b === "string" ? String((raw as any).b) : undefined;
+        if (!a && !b) return null;
+        return { a, b } as UICoupling;
+      })
+      .filter(Boolean) as UICoupling[];
+
+    const gearRaw = isRecord(data.gear) ? data.gear : {};
+    const gear = {
+      module: Number.isFinite(Number((gearRaw as any).module)) ? Number((gearRaw as any).module) : 1,
+      pressureDeg: Number.isFinite(Number((gearRaw as any).pressureDeg)) ? Number((gearRaw as any).pressureDeg) : 20,
+      width: Number.isFinite(Number((gearRaw as any).width)) ? Number((gearRaw as any).width) : 5,
+      helixDeg: Number.isFinite(Number((gearRaw as any).helixDeg)) ? Number((gearRaw as any).helixDeg) : 0,
+      ringThickness: Number.isFinite(Number((gearRaw as any).ringThickness)) ? Number((gearRaw as any).ringThickness) : 5,
+      backlash: Number.isFinite(Number((gearRaw as any).backlash)) ? Math.max(0, Number((gearRaw as any).backlash)) : 0,
+      undercut: typeof (gearRaw as any).undercut === "boolean" ? (gearRaw as any).undercut : true,
+      backlashPlanetsOnly:
+        typeof (gearRaw as any).backlashPlanetsOnly === "boolean" ? (gearRaw as any).backlashPlanetsOnly : false,
+    };
+
+    const cameraProjection =
+      data.cameraProjection === "perspective" ? "perspective" : "orthographic";
+    const timeScaleValue = Number.isFinite(Number(data.timeScale)) ? snapTimeScale(Number(data.timeScale)) : 1;
+    const decimalsValue = Number.isFinite(Number(data.decimals))
+      ? Math.max(0, Math.min(8, Math.round(Number(data.decimals))))
+      : 2;
+
+    return {
+      version: 1,
+      app: "Engrenarium",
+      savedAt: typeof wrapper.savedAt === "string" ? String(wrapper.savedAt) : new Date().toISOString(),
+      data: {
+        stages,
+        speeds,
+        ratio,
+        couplings,
+        gear,
+        cameraProjection,
+        timeScale: timeScaleValue,
+        decimals: decimalsValue,
+      },
+    };
+  }, [snapTimeScale]);
+
+  const applyLoadedPayload = useCallback((payload: PlanetarySaveV1) => {
+    const { data } = payload;
+    setStages(cloneStages(data.stages));
+    setSpeeds(cloneSpeeds(data.speeds));
+    setRatio(cloneRatio(data.ratio));
+    setCouplings(cloneCouplings(data.couplings));
+    setGearModule(data.gear.module);
+    setGearPressureDeg(data.gear.pressureDeg);
+    setGearWidth(data.gear.width);
+    setGearHelixDeg(data.gear.helixDeg);
+    setRingThickness(data.gear.ringThickness);
+    setBacklash(data.gear.backlash);
+    setUndercut(data.gear.undercut);
+    setBacklashPlanetsOnly(data.gear.backlashPlanetsOnly);
+    setCameraProjection(data.cameraProjection);
+    setTimeScale(data.timeScale);
+    setDecimals(data.decimals);
+    setResult(null);
+    setError(null);
+    setUnderdeterminedMessage(null);
+    setOverdeterminedMessage(null);
+    setPanelExample(null);
+    setSelectedGear(null);
+    setGearPanelOpen(false);
+    onExampleLoaded?.(null);
+    resetCameraDefaults();
+    setCameraZoomFitToken((t) => t + 1);
+
+    const last = data.stages.at(-1);
+    if (last) {
+      const { id: _id, ...tpl } = last as any;
+      lastTemplateRef.current = JSON.parse(JSON.stringify(tpl));
+    }
+  }, [
+    onExampleLoaded,
+    resetCameraDefaults,
+  ]);
+
+  const loadPlanetaryFile = useCallback(async (file: File) => {
+    try {
+      const text = await file.text();
+      const payload = normalizePlanetaryPayload(text);
+      if (!payload) {
+        window.alert(lang === "en" ? "Invalid planetary file." : "Arquivo de planetária inválido.");
+        return;
+      }
+      applyLoadedPayload(payload);
+    } catch (err) {
+      console.error(err);
+      window.alert(lang === "en" ? "Could not read the planetary file." : "Não foi possível ler o arquivo de planetária.");
+    }
+  }, [applyLoadedPayload, lang, normalizePlanetaryPayload]);
+
+  useImperativeHandle(ref, () => ({
+    savePlanetary,
+    openLoadDialog,
+  }), [openLoadDialog, savePlanetary]);
+
   function updateStage(stageId: number, mutate: (s: UIStage) => UIStage) {
     clearExampleSelectionIfNeeded();
     setStages((xs) => xs.map((s) => {
@@ -475,6 +815,26 @@ function startDrag(e: React.MouseEvent) {
     return buildOmegaOptions(stages, lang);
   }, [stages, lang]);
 
+  const maxCopiesByStage = useMemo(() => {
+    const map = new Map<number, number>();
+    stages.forEach((s) => map.set(s.id, getMaxPlanetCopies(s)));
+    return map;
+  }, [stages]);
+
+  useEffect(() => {
+    let changed = false;
+    const next = stages.map((s) => {
+      const max = maxCopiesByStage.get(s.id) ?? 1;
+      const clamped = clampPlanetCopies(s, max);
+      if (clamped !== (s.planetCopies ?? 1)) {
+        changed = true;
+        return { ...s, planetCopies: clamped };
+      }
+      return s;
+    });
+    if (changed) setStages(next);
+  }, [stages, maxCopiesByStage]);
+
   // Muda sempre que qualquer parâmetro estrutural mudar (dentes, lista de planetas, cópias)
 const topologyKey = useMemo(() => {
   return stages
@@ -483,10 +843,10 @@ const topologyKey = useMemo(() => {
       s.solarZ ?? "null",
       s.planetsZ.join(","),
       s.annulusZ ?? "null",
-      s.planetCopies ?? 1,
+      clampPlanetCopies(s, maxCopiesByStage.get(s.id)),
     ].join("|"))
     .join("||");
-}, [stages]);
+}, [stages, maxCopiesByStage]);
 
   const labelById = useMemo(() => {
     const m = new Map<string,string>();
@@ -701,7 +1061,13 @@ function addPlanet(stageId: number) {
       }
 
       const maxNa = Ns + 2 * newPlanets.reduce((acc, z) => acc + z, 0);
-      const status = validarMontagem(Ns, newPlanets, s.annulusZ, s.planetCopies ?? 1);
+      const maxCopies = computeMaxPlanetCopies({
+        solarZ: s.solarZ,
+        annulusZ: s.annulusZ,
+        planetsZ: newPlanets,
+      });
+      const copies = Math.max(1, Math.min(maxCopies, Math.round(s.planetCopies ?? 1)));
+      const status = validarMontagem(Ns, newPlanets, s.annulusZ, copies);
 
       // Se o anelar atual não encaixa mais com o conjunto de planetas, ajusta para o valor limite (braço reto)
       if (!status.valido) {
@@ -923,7 +1289,8 @@ useEffect(() => {
     setUnderdeterminedMessage(null);
     const statusPorStage: Record<number, MontagemStatus> = {};
     for (const st of stages) {
-      const s = validarMontagem(st.solarZ, st.planetsZ, st.annulusZ, st.planetCopies ?? 1);
+      const copies = clampPlanetCopies(st, maxCopiesByStage.get(st.id));
+      const s = validarMontagem(st.solarZ, st.planetsZ, st.annulusZ, copies);
       statusPorStage[st.id] = s;
       if (!s.valido) {
         setMontagem(statusPorStage);
@@ -967,7 +1334,8 @@ const resultMemo = useMemo(() => {
       setOverdeterminedMessage(null);
       const statusPorStage: Record<number, MontagemStatus> = {};
       for (const st of stages) {
-        const s = validarMontagem(st.solarZ, st.planetsZ, st.annulusZ, st.planetCopies ?? 1);
+        const copies = clampPlanetCopies(st, maxCopiesByStage.get(st.id));
+        const s = validarMontagem(st.solarZ, st.planetsZ, st.annulusZ, copies);
         statusPorStage[st.id] = s;
         if (!s.valido) {
           setMontagem(statusPorStage);
@@ -1039,7 +1407,10 @@ const resultMemo = useMemo(() => {
       {/* Geometria */}
       <div style={cardStyle}>
         <h3 style={{ marginTop: 0 }}>{t("geometry")}</h3>
-        {stages.map((st) => (
+        {stages.map((st) => {
+          const maxCopies = maxCopiesByStage.get(st.id) ?? 1;
+          const copiesValue = clampPlanetCopies(st, maxCopies);
+          return (
           <div key={st.id} style={{ borderTop: "1px solid var(--border)", paddingTop: 8, marginTop: 8 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
               <div style={{ fontWeight: 600 }}>{t("planetary")} {st.id}</div>
@@ -1102,15 +1473,14 @@ const resultMemo = useMemo(() => {
                 style={input}
                 type="number"
                 min={1}
-                max={5}
-                value={st.planetCopies ?? 1}
+                max={maxCopies}
+                value={copiesValue}
                 onChange={(e) =>
-                  updateStage(st.id, (s) => ({
-                    ...s,
-                    planetCopies:
-                      e.target.value === "" ? 1 :
-                      Math.max(1, Math.min(5, Number(e.target.value)))
-                  }))
+                  updateStage(st.id, (s) => {
+                    const v = Math.round(Number(e.target.value));
+                    const next = Math.max(1, Math.min(maxCopies, Number.isFinite(v) ? v : 1));
+                    return { ...s, planetCopies: next };
+                  })
                 }
               />
             </div>
@@ -1119,7 +1489,7 @@ const resultMemo = useMemo(() => {
               {t("meshChainHint")}
             </div>
           </div>
-        ))}
+        );})}
         <div style={{ marginTop: 8 }}>
           <button style={btn} onClick={addStage}>{t("addPlanetary")}</button>
         </div>
@@ -1350,7 +1720,7 @@ const resultMemo = useMemo(() => {
                 onChange={(e) => {
                   const v = Number(e.target.value);
                   if (Number.isNaN(v)) {
-                    setRingThickness(3);
+                    setRingThickness(5);
                   } else {
                     setRingThickness(Math.max(0, v));
                   }
@@ -1420,6 +1790,17 @@ const resultMemo = useMemo(() => {
 
   return (
     <div ref={containerRef} style={layoutStyle}>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".engr,application/json,.json,.planetaria.json"
+        style={{ display: "none" }}
+        onChange={(e) => {
+          const file = e.currentTarget.files?.[0];
+          e.currentTarget.value = "";
+          if (file) void loadPlanetaryFile(file);
+        }}
+      />
       {isMobile && (
         <>
           <div
@@ -1795,8 +2176,7 @@ const resultMemo = useMemo(() => {
     )}
   </div>
 );
-
-}
+});
 
 /** ---------- Helpers de nomes ---------- */
 const omegaS = (sid:number)=>`omega_s${sid}`;

@@ -29,7 +29,7 @@
 //
 // Observações de robustez:
 //   - Aceita ausência de solar/anelar conforme regras acima.
-//   - N (cópias) limitado a [1, 5] como no GearScene.
+//   - N (cópias) deve ser >= 1 (sem limite superior aqui).
 
 const TAU = Math.PI * 2;
 
@@ -64,7 +64,7 @@ function computeArmAngles(
   zRing: number | null,
   planetsZ: number[]
 ): number[] {
-  const N = Math.max(1, Math.min(5, Math.round(Nraw || 1)));
+  const N = Math.max(1, Math.round(Nraw || 1));
   if (N <= 1) return [0];
 
   // Se faltar Sol ou Anel, assume simetria perfeita
@@ -118,7 +118,7 @@ export function computeStagePhasing(inp: In): Out {
   const { stageId, solarZ, annulusZ, planetsZ, copies, positions } = inp;
 
   // 1) Ângulos das cópias do braço
-  const N = Math.max(1, Math.min(5, Math.round(copies || 1)));
+  const N = Math.max(1, Math.round(copies || 1));
   const copyAngles = computeArmAngles(N, solarZ, annulusZ, planetsZ);
 
   // 3) Fase da solar — sempre 0

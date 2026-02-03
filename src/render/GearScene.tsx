@@ -4,6 +4,11 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls, Html } from "@react-three/drei";
 import { Vector3 } from "three";
 import { computeStagePhasing } from "./phasing";
+import {
+  computeMaxPlanetCopies,
+  computePlanetArmLayout,
+  PX_PER_TOOTH,
+} from "../math/planetCopies";
 import { strings, type Lang } from "../ui/i18n";
 import { DesignTree, type TreeStage } from "../ui/DesignTree";
 
@@ -14,7 +19,7 @@ const DEG = Math.PI / 180;
 const DEFAULT_PRESSURE_ANGLE = 20 * DEG; // evolvente padrão
 const DEFAULT_MODULE_MM = 1;             // módulo padrão
 const DEFAULT_EXTRUDE_DEPTH = 5;         // profundidade base da extrusão em Z
-const DEFAULT_RING_THICKNESS = 3;        // espessura do anel (em múltiplos do módulo)
+const DEFAULT_RING_THICKNESS = 5;        // espessura do anel (em múltiplos do módulo)
 
 type GearProfile = {
   moduleMm: number;
@@ -89,8 +94,7 @@ const stageIdFromKey = (key: string): number | null => {
   return m ? Number(m[1]) : null;
 };
 
-// regra de escala (passo = “módulo” visual)
-const PX_PER_TOOTH = 0.6;  // leve e compacto
+// regra de escala (passo = “módulo” visual) vem de ../math/planetCopies
 const STAGE_GAP_Z = 20;    // folga entre superfícies consecutivas (Z)
 const DISC_THICK   = 1.2;  // espessura visual
 const SEGMENTS     = 64;   // segmentos do círculo (mantém leve)
@@ -138,10 +142,6 @@ function radToDeg(x?: number): string {
   return x == null ? "[]" : (x * 180 / Math.PI).toFixed(1);
 }
 
-
-function radiusFromZ(z: number | null): number {
-  return Math.max(2, (z ?? 0) * PX_PER_TOOTH);
-}
 
 // ===== Engrenagem involuta EXTERNA (adaptado de Leemon Baird) =====
 
@@ -560,21 +560,24 @@ function Gear3DInternal({
 function buildStageLayout(st: UIStageIn, zBase: number, topologyKey?: string): StageLayout {
   const items: GearItem[] = [];
 
-  // Sanitiza valores para evitar NaN durante a digitação (ex.: "1", "1e", vazio)
-  const solarZ = Number.isFinite(st.solarZ ?? NaN) ? st.solarZ : null;
-  const annulusZ = Number.isFinite(st.annulusZ ?? NaN) ? st.annulusZ : null;
-  const planetsZ = st.planetsZ.map((z) => (Number.isFinite(z) ? z : 0));
+  const armLayout = computePlanetArmLayout({
+    solarZ: st.solarZ,
+    annulusZ: st.annulusZ,
+    planetsZ: st.planetsZ,
+  });
 
-  const hasSun = solarZ != null;
-  const hasRing = annulusZ != null;
-
-  // 1) Raios auxiliares (não usa lastSolarZ quando o Sol não existe)
-  const Rs = hasSun ? radiusFromZ(solarZ) : 0;
-  const Ra = hasRing ? radiusFromZ(annulusZ) : 0;
-
-  const planetsR = planetsZ.map(radiusFromZ);
-  const ringUsable = hasRing && planetsR.length > 0 && Ra > planetsR[0] * 1.05;
-  const MIN_GAP = planetsR.length > 0 ? Math.max(1, planetsR[0] * 0.1) : 1;
+  const {
+    solarZ,
+    annulusZ,
+    planetsZ,
+    hasSun,
+    hasRing,
+    Rs,
+    Ra,
+    planetsR,
+    ringUsable,
+    positions,
+  } = armLayout;
 
   // 2) Solar: só desenha se existir
   if (hasSun) {
@@ -588,100 +591,7 @@ function buildStageLayout(st: UIStageIn, zBase: number, topologyKey?: string): S
     });
   }
 
-  // 3) Planetas base (braço reto/curvo)
-  const positions: [number, number][] = [];
-
-  if (planetsR.length > 0) {
-    const Rp1 = planetsR[0];
-    // Caso especial: sem solar, com anel e planetas em série → alinhar radialmente rumo ao centro
-    if (!hasSun && ringUsable && planetsR.length >= 2) {
-      const n = planetsR.length;
-      const posRadial: [number, number][] = new Array(n) as any;
-      const contactR = Math.max(MIN_GAP, Ra - planetsR[n - 1]);
-      posRadial[n - 1] = [contactR, 0];
-      for (let k = n - 2; k >= 0; k--) {
-        const next = posRadial[k + 1];
-        const step = planetsR[k] + planetsR[k + 1];
-        posRadial[k] = [Math.max(MIN_GAP, next[0] - step), 0];
-      }
-      positions.push(...posRadial);
-    } else {
-      // Com Sol → tangencia o Sol; sem Sol mas com Anel → tangencia o Anel;
-      // se o anel for menor que o planeta, mantém um afastamento mínimo para evitar degeneração.
-      const contactFromRing = Ra - Rp1;
-      const x1 = hasSun
-        ? Rs + Rp1
-        : ringUsable
-          ? Math.max(MIN_GAP, contactFromRing)
-          : Math.max(MIN_GAP, Rp1);
-      positions.push([x1, 0]);
-
-      if (ringUsable && planetsR.length === 2) {
-        // ---- Braço CURVO para exatamente 2 planetas ----
-        const Rp2 = planetsR[1];
-        const Rcirc = Ra - Rp2; // circunferência do centro de P2
-
-        const numer = (x1 * x1) + (Rcirc * Rcirc) - (Rp1 + Rp2) * (Rp1 + Rp2);
-        const denom = 2 * x1 * Rcirc;
-        let cosTheta = numer / (denom !== 0 ? denom : 1e-9);
-        cosTheta = Math.max(-1, Math.min(1, cosTheta));
-        const theta = Math.acos(cosTheta);
-
-        positions.push([Rcirc * Math.cos(theta), Rcirc * Math.sin(theta)]);
-
-      } else if (ringUsable && planetsR.length >= 3) {
-        // ---- Braço CURVO para 3+ planetas ----
-        const rot = (vx: number, vy: number, ang: number): [number, number] => {
-          const c = Math.cos(ang), s = Math.sin(ang);
-          return [vx * c - vy * s, vx * s + vy * c];
-        };
-
-        const finalRadiusFor = (alpha: number): { lastR: number; pts: [number, number][] } => {
-          const pts: [number, number][] = [[x1, 0]];
-          let dir: [number, number] = [1, 0]; // direção inicial +x
-
-          for (let k = 1; k < planetsR.length; k++) {
-            dir = rot(dir[0], dir[1], alpha);
-            const step = planetsR[k - 1] + planetsR[k];
-            const prev = pts[k - 1];
-            pts.push([prev[0] + dir[0] * step, prev[1] + dir[1] * step]);
-          }
-
-          const last = pts[pts.length - 1];
-          const lastR = Math.hypot(last[0], last[1]);
-          return { lastR, pts };
-        };
-
-        const target = Ra - planetsR[planetsR.length - 1];
-        let lo = 0, hi = Math.PI * 0.9;
-        let best = finalRadiusFor(0);
-
-        for (let i = 0; i < 32; i++) {
-          const mid = (lo + hi) / 2;
-          const sim = finalRadiusFor(mid);
-          best = sim;
-          if (sim.lastR > target) {
-            lo = mid;
-          } else {
-            hi = mid;
-          }
-        }
-
-        positions.splice(0, positions.length, ...best.pts);
-
-      } else {
-        // ---- Sem anel ou poucos planetas: braço reto colinear ----
-        for (let k = 1; k < planetsR.length; k++) {
-          const RpPrev = planetsR[k - 1];
-          const RpK = planetsR[k];
-          const prev = positions[k - 1];
-          positions.push([prev[0] + RpPrev + RpK, 0]);
-        }
-      }
-    }
-  }
-
-  // 4) Planetas base (1 conjunto)
+  // 3) Planetas base (1 conjunto)
   positions.forEach((p, k) => {
     const omegaId = `omega_p${st.id}_${k + 1}`;
     items.push({
@@ -694,8 +604,9 @@ function buildStageLayout(st: UIStageIn, zBase: number, topologyKey?: string): S
     });
   });
 
-  // 5) Cópias VISUAIS dos planetas segundo o faseamento
-  const copies = Math.max(1, Math.min(5, st.planetCopies ?? 1));
+  // 4) Cópias VISUAIS dos planetas segundo o faseamento
+  const maxCopies = computeMaxPlanetCopies(armLayout);
+  const copies = Math.max(1, Math.min(maxCopies, Math.round(st.planetCopies ?? 1)));
 
   const phasing = computeStagePhasing({
     stageId: st.id,
@@ -731,9 +642,8 @@ function buildStageLayout(st: UIStageIn, zBase: number, topologyKey?: string): S
     }
   }
 
-  // 6) Anelar
+  // 5) Anelar
   if (hasRing && annulusZ != null) {
-    const Ra = radiusFromZ(annulusZ);
     items.push({
       id: `ring-${st.id}`,
       kind: "ring",
@@ -744,7 +654,7 @@ function buildStageLayout(st: UIStageIn, zBase: number, topologyKey?: string): S
     });
   }
 
-  // 7) Monta o layout e pendura o faseamento
+  // 6) Monta o layout e pendura o faseamento
   const fmt = (value: number) => (Number.isFinite(value) ? value.toFixed(6) : "NaN");
   const positionsKey = positions.map(([x, y]) => `${fmt(x)},${fmt(y)}`).join(";");
   const itemsKey = items

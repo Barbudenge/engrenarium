@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { StageEditor } from "./ui/StageEditor";
+import { useEffect, useRef, useState } from "react";
+import { StageEditor, type StageEditorHandle } from "./ui/StageEditor";
 import { strings, type Lang, getStoredLang, setStoredLang } from "./ui/i18n";
 import { useIsMobile } from "./lib/useIsMobile";
 
@@ -10,8 +10,20 @@ export default function App() {
   const [exampleToLoad, setExampleToLoad] = useState<"EX1" | "EX2" | "EX3" | "EX4" | null>(null);
   const [resetSignal, setResetSignal] = useState(0);
   const [lastLoadedExample, setLastLoadedExample] = useState<"EX1" | "EX2" | "EX3" | "EX4" | null>(null);
+  const stageEditorRef = useRef<StageEditorHandle | null>(null);
   const logoUrl = `${import.meta.env.BASE_URL}logo-engrenarium.png`;
   const mobileLeftOffset = isMobile ? 32 : 0;
+  const headerButtonStyle = {
+    border: "1px solid var(--btn-border)",
+    background: "var(--btn-bg)",
+    color: "var(--text)",
+    borderRadius: 6,
+    padding: isMobile ? "6px 10px" : "6px 11px",
+    cursor: "pointer",
+    fontWeight: 600,
+    fontSize: isMobile ? 13 : 14,
+    whiteSpace: "nowrap",
+  } as const;
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
@@ -120,16 +132,7 @@ export default function App() {
           </div>
 
         <button
-          style={{
-            border: "1px solid var(--btn-border)",
-            background: "var(--btn-bg)",
-            color: "var(--text)",
-            borderRadius: 6,
-            padding: isMobile ? "6px 10px" : "6px 11px",
-            cursor: "pointer",
-            fontWeight: 600,
-            fontSize: isMobile ? 13 : 14,
-          }}
+          style={headerButtonStyle}
           onClick={() => {
             setExampleToLoad(null);
             setResetSignal((x) => x + 1);
@@ -137,6 +140,18 @@ export default function App() {
           }}
         >
           {strings[lang].newPlanetary}
+        </button>
+        <button
+          style={headerButtonStyle}
+          onClick={() => void stageEditorRef.current?.savePlanetary()}
+        >
+          {strings[lang].savePlanetary}
+        </button>
+        <button
+          style={headerButtonStyle}
+          onClick={() => stageEditorRef.current?.openLoadDialog()}
+        >
+          {strings[lang].loadPlanetary}
         </button>
 
           <div
@@ -224,6 +239,7 @@ export default function App() {
         </p>
 
         <StageEditor
+          ref={stageEditorRef}
           lang={lang}
           exampleToLoad={exampleToLoad}
           onExampleLoaded={(id) => {
