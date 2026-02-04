@@ -4,6 +4,7 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls, Html } from "@react-three/drei";
 import { Vector3 } from "three";
 import { computeStagePhasing } from "./phasing";
+import { buildArmArmCouplingSegments } from "./couplings";
 import {
   computeMaxPlanetCopies,
   computePlanetArmLayout,
@@ -11,6 +12,7 @@ import {
 } from "../math/planetCopies";
 import { strings, type Lang } from "../ui/i18n";
 import { DesignTree, type TreeStage } from "../ui/DesignTree";
+import type { UICoupling } from "../ui/presets";
 
 
 
@@ -61,7 +63,7 @@ type GearItem =
 
 type RotZProps = {
   omega: number;
-  resetOn?: string;
+  resetOn?: string | number;
   preserveAngleOnReset?: boolean;
   children: React.ReactNode;
 };
@@ -101,6 +103,14 @@ const SEGMENTS     = 64;   // segmentos do círculo (mantém leve)
 const DOT_PX = 1.0;
 const DOT_SURFACE_OFFSET = 0.2;        // desloca o marcador para fora da engrenagem
 const GEAR_HOLE_RADIUS = 3;            // raio (mundo) do furo central nas solares/planetas
+const SUN_SHAFT_LENGTH = 10;           // comprimento do eixo da solar (para trás)
+const SUN_SHAFT_WALL = 2.5;            // espessura da parede do eixo
+const SUN_SHAFT_OUTER_RADIUS = GEAR_HOLE_RADIUS + SUN_SHAFT_WALL;
+const CARRIER_PLATE_THICKNESS = DISC_THICK * DEFAULT_EXTRUDE_DEPTH * 0.6;
+const CARRIER_Z_OFFSET = -CARRIER_PLATE_THICKNESS * 0.6;
+const CARRIER_PEG_RADIUS = GEAR_HOLE_RADIUS * 0.8;
+const CARRIER_PAD_RADIUS = GEAR_HOLE_RADIUS * 1.35;
+const CARRIER_CORE_OUTER_RADIUS = Math.max(GEAR_HOLE_RADIUS * 2.6, (GEAR_HOLE_RADIUS * 1.35) * 1.1);
 const BODY_CLEAR = 0.985;
 const DEBUG_PHASING = false;
 const PHASE_ORIENT = -Math.PI / 2;  // -90°: leva o “0” da geometria (eixo +Y) para o eixo +X
@@ -785,19 +795,20 @@ type CarrierVisualProps = {
 };
 
 function CarrierVisual({ anchors, color = CARRIER_COLOR, opacity = 1 }: CarrierVisualProps) {
-  const holeR = GEAR_HOLE_RADIUS;
-  const pegR = holeR * 0.8;                // diâmetro do pino = 80% do furo
+  const baseHoleR = GEAR_HOLE_RADIUS;
+  const holeR = Math.max(baseHoleR, SUN_SHAFT_OUTER_RADIUS + 0.5); // furo central do braço
+  const pegR = CARRIER_PEG_RADIUS;                // diâmetro do pino = 80% do furo (engrenagem)
   // Mantém o "corpo" do braço estável, independente da largura da engrenagem
-  const plateThickness = DISC_THICK * DEFAULT_EXTRUDE_DEPTH * 0.6;
+  const plateThickness = CARRIER_PLATE_THICKNESS;
   const { extrudeDepth } = useGearProfile();
   // Apenas o comprimento do pino acompanha a largura das engrenagens
   const gearThickness = DISC_THICK * extrudeDepth;
   const pegLength = gearThickness + plateThickness; // cobre engrenagem + base do pad
-  const padR = holeR * 1.35;
+  const padR = CARRIER_PAD_RADIUS;
   const barThickness = plateThickness * 0.7;
   const center = anchors[0];
-  const carrierZOffset = -plateThickness * 0.6;
-  const coreOuterR = Math.max(holeR * 2.2, padR * 1.1);
+  const carrierZOffset = CARRIER_Z_OFFSET;
+  const coreOuterR = CARRIER_CORE_OUTER_RADIUS;
   const rimThickness = barThickness;
   // posiciona barras/aneis com a face inferior alinhada ao fundo do disco central
   const zAlign = (-plateThickness + barThickness) / 2;
@@ -954,6 +965,85 @@ function CarrierVisual({ anchors, color = CARRIER_COLOR, opacity = 1 }: CarrierV
   );
 }
 
+type CouplingRodProps = {
+  from: { x: number; y: number; z: number };
+  to: { x: number; y: number; z: number };
+  radius: number;
+  color: string;
+  opacity: number;
+};
+
+function CouplingRod({ from, to, radius, color, opacity }: CouplingRodProps) {
+  const dir = new Vector3(to.x - from.x, to.y - from.y, to.z - from.z);
+  const length = dir.length();
+  if (length < 1e-4) return null;
+  const mid = new Vector3(
+    (from.x + to.x) / 2,
+    (from.y + to.y) / 2,
+    (from.z + to.z) / 2
+  );
+  const quat = new THREE.Quaternion();
+  quat.setFromUnitVectors(new Vector3(0, 1, 0), dir.normalize());
+
+  return (
+    <mesh position={[mid.x, mid.y, mid.z]} quaternion={quat}>
+      <cylinderGeometry args={[radius, radius, length, 24]} />
+      <meshStandardMaterial
+        color={color}
+        metalness={0.25}
+        roughness={0.45}
+        transparent={opacity < 1}
+        opacity={opacity}
+      />
+    </mesh>
+  );
+}
+
+type CouplingElbowProps = {
+  at: { x: number; y: number; z: number };
+  radius: number;
+  color: string;
+  opacity: number;
+};
+
+function CouplingElbow({ at, radius, color, opacity }: CouplingElbowProps) {
+  return (
+    <mesh position={[at.x, at.y, at.z]}>
+      <sphereGeometry args={[radius, 24, 16]} />
+      <meshStandardMaterial
+        color={color}
+        metalness={0.25}
+        roughness={0.45}
+        transparent={opacity < 1}
+        opacity={opacity}
+      />
+    </mesh>
+  );
+}
+
+type CouplingPadProps = {
+  at: { x: number; y: number; z: number };
+  radius: number;
+  thickness: number;
+  color: string;
+  opacity: number;
+};
+
+function CouplingPad({ at, radius, thickness, color, opacity }: CouplingPadProps) {
+  return (
+    <mesh position={[at.x, at.y, at.z]} rotation={[Math.PI / 2, 0, 0]}>
+      <cylinderGeometry args={[radius, radius, thickness, 32]} />
+      <meshStandardMaterial
+        color={color}
+        metalness={0.2}
+        roughness={0.5}
+        transparent={opacity < 1}
+        opacity={opacity}
+      />
+    </mesh>
+  );
+}
+
 const Z_EPS = 0.001;       // para evitar z-fighting
 
 
@@ -1087,6 +1177,63 @@ function SpinningDisc({
 }
 
 
+function SunShaft({
+  pos,
+  color,
+  localOmega,
+  phase = 0,
+  resetOn,
+  opacity = 1,
+}: {
+  pos: [number, number, number];
+  color: string;
+  localOmega: number;
+  phase?: number;
+  resetOn?: any;
+  opacity?: number;
+}) {
+  const innerR = GEAR_HOLE_RADIUS;
+  const outerR = SUN_SHAFT_OUTER_RADIUS;
+  const length = SUN_SHAFT_LENGTH;
+  const isVisible = opacity > 0.001;
+
+  const shaftMesh = React.useMemo(() => {
+    const shape = new THREE.Shape();
+    shape.absarc(0, 0, outerR, 0, Math.PI * 2);
+    const hole = new THREE.Path();
+    hole.absarc(0, 0, innerR, 0, Math.PI * 2, true);
+    shape.holes.push(hole);
+
+    const geo = new THREE.ExtrudeGeometry(shape, {
+      depth: length,
+      bevelEnabled: false,
+      curveSegments: 48,
+    });
+    // estende para trás (lado do braço): z ∈ [-length, 0]
+    geo.translate(0, 0, -length);
+    geo.computeVertexNormals();
+    return geo;
+  }, [innerR, outerR, length]);
+
+  return (
+    <group position={pos} rotation={[0, 0, phase + PHASE_ORIENT]} visible={isVisible}>
+      <RotZ omega={localOmega} resetOn={resetOn}>
+        <mesh>
+          <primitive object={shaftMesh} />
+          <meshStandardMaterial
+            color={color}
+            metalness={0.35}
+            roughness={0.45}
+            transparent={opacity < 1}
+            opacity={opacity}
+          />
+        </mesh>
+      </RotZ>
+    </group>
+  );
+}
+
+
 function RotZ({
   omega,
   resetOn,
@@ -1168,6 +1315,7 @@ export function GearScene({
   backlashPlanetsOnly = false,
   visibilityResetToken = 0,
   phaseResetToken = 0,
+  couplings = [],
 }: {
   stages: UIStageIn[];
   velocities: Record<string, number> | null;
@@ -1188,6 +1336,7 @@ export function GearScene({
   backlashPlanetsOnly?: boolean;
   visibilityResetToken?: number | string;
   phaseResetToken?: number | string;
+  couplings?: UICoupling[];
 }) {
 
   const safeModuleMm = gearModule && gearModule > 0 ? gearModule : DEFAULT_MODULE_MM;
@@ -1463,6 +1612,46 @@ export function GearScene({
     return out;
   }, [stages, layouts, stageZOffsets]);
 
+  const carrierResetKeyByStage = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const stage of layouts) {
+      map.set(stage.stageId, `${stage.signature}|carrier|pr${phaseResetToken}|vr${visibilityResetToken}`);
+    }
+    return map;
+  }, [layouts, phaseResetToken, visibilityResetToken]);
+
+  const omegaByStage = useMemo(() => {
+    const map = new Map<number, number>();
+    for (const st of stages) {
+      const wb_rpm = velocities?.[`omega_b${st.id}`] ?? 0;
+      map.set(st.id, rpmToRad(wb_rpm));
+    }
+    return map;
+  }, [stages, velocities, timeScale]);
+
+  const carrierOpacityByStage = useMemo(() => {
+    const map = new Map<number, number>();
+    for (const st of stages) {
+      const stageHidden = hiddenParts.has(stageKey(st.id));
+      const carrierHidden = stageHidden || hiddenParts.has(carrierKey(st.id));
+      map.set(st.id, carrierHidden ? 0 : 1);
+    }
+    return map;
+  }, [stages, hiddenParts]);
+
+  const armCouplingSegments = useMemo(
+    () =>
+      buildArmArmCouplingSegments({
+        couplings,
+        carrierPaths,
+        plateThickness: CARRIER_PLATE_THICKNESS,
+        gearThickness: gearVisualThickness,
+        carrierZOffset: CARRIER_Z_OFFSET,
+        minTargetRadius: CARRIER_CORE_OUTER_RADIUS,
+      }),
+    [couplings, carrierPaths, gearVisualThickness]
+  );
+
 
 
 return (
@@ -1485,6 +1674,62 @@ return (
         />
         <ambientLight intensity={0.6} />
         <directionalLight position={[3, 4, 5]} intensity={0.6} />
+
+        {armCouplingSegments.map((group) => {
+          const opacity = Math.min(
+            carrierOpacityByStage.get(group.stageA) ?? 1,
+            carrierOpacityByStage.get(group.stageB) ?? 1
+          );
+          if (opacity <= 0.001) return null;
+          const omega =
+            omegaByStage.get(group.stageA) ??
+            omegaByStage.get(group.stageB) ??
+            0;
+          const resetKey =
+            carrierResetKeyByStage.get(group.stageA) ??
+            carrierResetKeyByStage.get(group.stageB) ??
+            phaseResetToken;
+
+          return (
+            <RotZ
+              key={`arm-cpl-${group.stageA}-${group.stageB}`}
+              omega={omega}
+              resetOn={resetKey}
+            >
+              <group>
+                {group.segments.map((seg, idx) => (
+                  <CouplingRod
+                    key={idx}
+                    from={seg.from}
+                    to={seg.to}
+                    radius={CARRIER_PEG_RADIUS}
+                    color={CARRIER_COLOR}
+                    opacity={opacity}
+                  />
+                ))}
+                {group.elbows.map((elbow, idx) => (
+                  <CouplingElbow
+                    key={`elbow-${idx}`}
+                    at={elbow}
+                    radius={CARRIER_PEG_RADIUS}
+                    color={CARRIER_COLOR}
+                    opacity={opacity}
+                  />
+                ))}
+                {group.pads.map((pad, idx) => (
+                  <CouplingPad
+                    key={`pad-${idx}`}
+                    at={pad}
+                    radius={CARRIER_PAD_RADIUS}
+                    thickness={CARRIER_PLATE_THICKNESS}
+                    color={CARRIER_COLOR}
+                    opacity={opacity}
+                  />
+                ))}
+              </group>
+            </RotZ>
+          );
+        })}
 
         {layouts.map((stage) => {
           const sid = stage.stageId;
@@ -1576,6 +1821,14 @@ return (
                           holeRadius={GEAR_HOLE_RADIUS}
                           helixAngleRad={helixAngleFor("sun")}
                           backlashOverride={backlashForKind("sun")}
+                          opacity={sunOpacity}
+                        />
+                        <SunShaft
+                          pos={it.pos}
+                          color={COLORS.sun}
+                          localOmega={ws_local}
+                          phase={phase}
+                          resetOn={sunResetToken}
                           opacity={sunOpacity}
                         />
                       </group>

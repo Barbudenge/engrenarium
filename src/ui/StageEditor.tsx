@@ -1965,35 +1965,36 @@ const resultMemo = useMemo(() => {
             </div>
           </div>
         )}
-        <GearScene
-          key={resetSignal}
-          stages={stages.map(s => ({
-            id: s.id,
-            solarZ: s.solarZ,
-            planetsZ: s.planetsZ,
-            annulusZ: s.annulusZ,
-            lastSolarZ: s.lastSolarZ,
-            planetCopies: s.planetCopies ?? 1,
-          }))}
-          velocities={hasImpossible ? null : (resultMemo?.velocities ?? null)}
-          timeScale={hasImpossible ? 0 : timeScale}
-          topologyKey={topologyKey}
-          lang={lang}
-          cameraZoomMultiplier={cameraZoomMultiplier}
-          cameraResetToken={cameraResetToken}
-          cameraZoomFitToken={cameraZoomFitToken}
-          cameraProjection={cameraProjection}
-          gearModule={gearModule}
-          gearPressureDeg={gearPressureDeg}
-          gearHelixDeg={gearHelixDeg}
-          gearWidth={gearWidth}
-          ringThickness={ringThickness}
-          backlash={backlash}
-          undercut={undercut}
-          backlashPlanetsOnly={backlashPlanetsOnly}
-          visibilityResetToken={resetSignal}
-          phaseResetToken={resetSignal}
-        />
+          <GearScene
+            key={resetSignal}
+            stages={stages.map(s => ({
+              id: s.id,
+              solarZ: s.solarZ,
+              planetsZ: s.planetsZ,
+              annulusZ: s.annulusZ,
+              lastSolarZ: s.lastSolarZ,
+              planetCopies: s.planetCopies ?? 1,
+            }))}
+            velocities={hasImpossible ? null : (resultMemo?.velocities ?? null)}
+            timeScale={hasImpossible ? 0 : timeScale}
+            topologyKey={topologyKey}
+            lang={lang}
+            cameraZoomMultiplier={cameraZoomMultiplier}
+            cameraResetToken={cameraResetToken}
+            cameraZoomFitToken={cameraZoomFitToken}
+            cameraProjection={cameraProjection}
+            gearModule={gearModule}
+            gearPressureDeg={gearPressureDeg}
+            gearHelixDeg={gearHelixDeg}
+            gearWidth={gearWidth}
+            ringThickness={ringThickness}
+            backlash={backlash}
+            undercut={undercut}
+            backlashPlanetsOnly={backlashPlanetsOnly}
+            visibilityResetToken={resetSignal}
+            phaseResetToken={resetSignal}
+            couplings={couplings}
+          />
       </div>
 
       {/* Divisor (⇵) — arraste para redimensionar */}
