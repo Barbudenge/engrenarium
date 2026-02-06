@@ -4,7 +4,12 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls, Html } from "@react-three/drei";
 import { Vector3 } from "three";
 import { computeStagePhasing } from "./phasing";
-import { buildArmArmCouplingSegments } from "./couplings";
+import {
+  buildArmArmCouplingSegments,
+  buildArmRingCouplingSegments,
+  buildRingRingCouplingSpans,
+  buildSunSunCouplingSpans,
+} from "./couplings";
 import {
   computeMaxPlanetCopies,
   computePlanetArmLayout,
@@ -106,6 +111,7 @@ const GEAR_HOLE_RADIUS = 3;            // raio (mundo) do furo central nas solar
 const SUN_SHAFT_LENGTH = 10;           // comprimento do eixo da solar (para trás)
 const SUN_SHAFT_WALL = 2.5;            // espessura da parede do eixo
 const SUN_SHAFT_OUTER_RADIUS = GEAR_HOLE_RADIUS + SUN_SHAFT_WALL;
+const SUN_SHAFT_CLEARANCE = 0.5;       // folga para acoplamentos solares
 const CARRIER_PLATE_THICKNESS = DISC_THICK * DEFAULT_EXTRUDE_DEPTH * 0.6;
 const CARRIER_Z_OFFSET = -CARRIER_PLATE_THICKNESS * 0.6;
 const CARRIER_PEG_RADIUS = GEAR_HOLE_RADIUS * 0.8;
@@ -792,11 +798,20 @@ type CarrierVisualProps = {
   anchors: Vector3[]; // 0 = centro (sol), demais = planetas
   color?: string;
   opacity?: number;
+  holeRadius?: number;
+  coreOuterRadius?: number;
 };
 
-function CarrierVisual({ anchors, color = CARRIER_COLOR, opacity = 1 }: CarrierVisualProps) {
+function CarrierVisual({
+  anchors,
+  color = CARRIER_COLOR,
+  opacity = 1,
+  holeRadius,
+  coreOuterRadius,
+}: CarrierVisualProps) {
   const baseHoleR = GEAR_HOLE_RADIUS;
-  const holeR = Math.max(baseHoleR, SUN_SHAFT_OUTER_RADIUS + 0.5); // furo central do braço
+  const defaultHoleR = Math.max(baseHoleR, SUN_SHAFT_OUTER_RADIUS + SUN_SHAFT_CLEARANCE);
+  const holeR = Math.max(baseHoleR, holeRadius ?? defaultHoleR); // furo central do braço
   const pegR = CARRIER_PEG_RADIUS;                // diâmetro do pino = 80% do furo (engrenagem)
   // Mantém o "corpo" do braço estável, independente da largura da engrenagem
   const plateThickness = CARRIER_PLATE_THICKNESS;
@@ -808,7 +823,8 @@ function CarrierVisual({ anchors, color = CARRIER_COLOR, opacity = 1 }: CarrierV
   const barThickness = plateThickness * 0.7;
   const center = anchors[0];
   const carrierZOffset = CARRIER_Z_OFFSET;
-  const coreOuterR = CARRIER_CORE_OUTER_RADIUS;
+  const coreWall = Math.max(0.5, CARRIER_CORE_OUTER_RADIUS - defaultHoleR);
+  const coreOuterR = Math.max(CARRIER_CORE_OUTER_RADIUS, coreOuterRadius ?? (holeR + coreWall));
   const rimThickness = barThickness;
   // posiciona barras/aneis com a face inferior alinhada ao fundo do disco central
   const zAlign = (-plateThickness + barThickness) / 2;
@@ -1044,6 +1060,94 @@ function CouplingPad({ at, radius, thickness, color, opacity }: CouplingPadProps
   );
 }
 
+type RingCouplingBandProps = {
+  zStart: number;
+  zEnd: number;
+  bendZ: number;
+  rInnerA: number;
+  rOuterA: number;
+  rInnerB: number;
+  rOuterB: number;
+  color: string;
+  opacity: number;
+};
+
+function RingCouplingBand({
+  zStart,
+  zEnd,
+  bendZ,
+  rInnerA,
+  rOuterA,
+  rInnerB,
+  rOuterB,
+  color,
+  opacity,
+}: RingCouplingBandProps) {
+  const geo = React.useMemo(() => {
+    const length = zEnd - zStart;
+    if (!Number.isFinite(length) || length <= 1e-4) return null;
+
+    const rimA = rOuterA - rInnerA;
+    const rimB = rOuterB - rInnerB;
+    const maxRim = Math.max(rimA, rimB);
+    if (!Number.isFinite(maxRim) || maxRim <= 1e-4) return null;
+
+    const diff = Math.max(Math.abs(rOuterA - rOuterB), Math.abs(rInnerA - rInnerB));
+    const sameRadius = diff <= 1e-4;
+    const localBend = Math.min(Math.max(bendZ - zStart, 0), length);
+    const minSpan = Math.min(length, Math.max(maxRim * 2, length * 0.2));
+    const curveSpan = sameRadius ? 0 : Math.min(length * 0.6, minSpan);
+    const halfSpan = curveSpan * 0.5;
+    const startCurve = Math.max(0, localBend - halfSpan);
+    const endCurve = Math.min(length, localBend + halfSpan);
+    const hasCurve = !sameRadius && endCurve - startCurve > 1e-4;
+
+    const smoothstep = (t: number) => t * t * (3 - 2 * t);
+    const interp = (zLocal: number, start: number, end: number) => {
+      if (!hasCurve) return start;
+      if (zLocal <= startCurve) return start;
+      if (zLocal >= endCurve) return end;
+      const t = (zLocal - startCurve) / (endCurve - startCurve);
+      return start + (end - start) * smoothstep(t);
+    };
+
+    const samples = Math.min(64, Math.max(8, Math.round(length * 1.2)));
+    const outerPoints: THREE.Vector2[] = [];
+    const innerPoints: THREE.Vector2[] = [];
+
+    for (let i = 0; i <= samples; i++) {
+      const t = i / samples;
+      const z = t * length;
+      const outer = interp(z, rOuterA, rOuterB);
+      const rim = interp(z, rimA, rimB);
+      const inner = outer - rim;
+      outerPoints.push(new THREE.Vector2(outer, z));
+      innerPoints.push(new THREE.Vector2(inner, z));
+    }
+
+    const profile = [...outerPoints, ...innerPoints.reverse()];
+    const geometry = new THREE.LatheGeometry(profile, SEGMENTS);
+    geometry.rotateX(Math.PI / 2);
+    geometry.computeVertexNormals();
+    return geometry;
+  }, [zStart, zEnd, bendZ, rInnerA, rOuterA, rInnerB, rOuterB]);
+
+  if (!geo || opacity <= 0.001) return null;
+
+  return (
+    <mesh position={[0, 0, zStart]}>
+      <primitive object={geo} />
+      <meshStandardMaterial
+        color={color}
+        metalness={0.35}
+        roughness={0.45}
+        transparent={opacity < 1}
+        opacity={opacity}
+      />
+    </mesh>
+  );
+}
+
 const Z_EPS = 0.001;       // para evitar z-fighting
 
 
@@ -1184,6 +1288,8 @@ function SunShaft({
   phase = 0,
   resetOn,
   opacity = 1,
+  innerRadius,
+  outerRadius,
 }: {
   pos: [number, number, number];
   color: string;
@@ -1191,9 +1297,11 @@ function SunShaft({
   phase?: number;
   resetOn?: any;
   opacity?: number;
+  innerRadius?: number;
+  outerRadius?: number;
 }) {
-  const innerR = GEAR_HOLE_RADIUS;
-  const outerR = SUN_SHAFT_OUTER_RADIUS;
+  const innerR = innerRadius ?? GEAR_HOLE_RADIUS;
+  const outerR = outerRadius ?? SUN_SHAFT_OUTER_RADIUS;
   const length = SUN_SHAFT_LENGTH;
   const isVisible = opacity > 0.001;
 
@@ -1230,6 +1338,58 @@ function SunShaft({
         </mesh>
       </RotZ>
     </group>
+  );
+}
+
+type SunCouplingShaftProps = {
+  zStart: number;
+  zEnd: number;
+  color: string;
+  opacity: number;
+  innerRadius?: number;
+  outerRadius?: number;
+};
+
+function SunCouplingShaft({
+  zStart,
+  zEnd,
+  color,
+  opacity,
+  innerRadius,
+  outerRadius,
+}: SunCouplingShaftProps) {
+  const innerR = innerRadius ?? GEAR_HOLE_RADIUS;
+  const outerR = outerRadius ?? SUN_SHAFT_OUTER_RADIUS;
+  const length = zEnd - zStart;
+  if (!Number.isFinite(length) || length <= 1e-4 || opacity <= 0.001) return null;
+
+  const shaftMesh = React.useMemo(() => {
+    const shape = new THREE.Shape();
+    shape.absarc(0, 0, outerR, 0, Math.PI * 2);
+    const hole = new THREE.Path();
+    hole.absarc(0, 0, innerR, 0, Math.PI * 2, true);
+    shape.holes.push(hole);
+
+    const geo = new THREE.ExtrudeGeometry(shape, {
+      depth: length,
+      bevelEnabled: false,
+      curveSegments: 48,
+    });
+    geo.computeVertexNormals();
+    return geo;
+  }, [innerR, outerR, length]);
+
+  return (
+    <mesh position={[0, 0, zStart]}>
+      <primitive object={shaftMesh} />
+      <meshStandardMaterial
+        color={color}
+        metalness={0.35}
+        roughness={0.45}
+        transparent={opacity < 1}
+        opacity={opacity}
+      />
+    </mesh>
   );
 }
 
@@ -1612,6 +1772,36 @@ export function GearScene({
     return out;
   }, [stages, layouts, stageZOffsets]);
 
+  const ringPaths = useMemo(() => {
+    const out: { stageId: number; pitchRadius: number; annulusZ: number; z: number }[] = [];
+    for (const layout of layouts) {
+      const ringItem = layout.items.find((it) => it.kind === "ring");
+      if (!ringItem) continue;
+      const annulusZ = stageMap.get(layout.stageId)?.annulusZ;
+      if (annulusZ == null) continue;
+      out.push({
+        stageId: layout.stageId,
+        pitchRadius: ringItem.r,
+        annulusZ,
+        z: ringItem.pos[2],
+      });
+    }
+    return out;
+  }, [layouts, stageMap]);
+
+  const sunPaths = useMemo(() => {
+    const out: { stageId: number; z: number }[] = [];
+    for (const layout of layouts) {
+      const sunItem = layout.items.find((it) => it.kind === "sun");
+      if (!sunItem) continue;
+      out.push({
+        stageId: layout.stageId,
+        z: sunItem.pos[2],
+      });
+    }
+    return out;
+  }, [layouts]);
+
   const carrierResetKeyByStage = useMemo(() => {
     const map = new Map<number, string>();
     for (const stage of layouts) {
@@ -1639,6 +1829,26 @@ export function GearScene({
     return map;
   }, [stages, hiddenParts]);
 
+  const ringOpacityByStage = useMemo(() => {
+    const map = new Map<number, number>();
+    for (const st of stages) {
+      const stageHidden = hiddenParts.has(stageKey(st.id));
+      const ringHidden = stageHidden || hiddenParts.has(ringKey(st.id));
+      map.set(st.id, ringHidden ? 0 : 1);
+    }
+    return map;
+  }, [stages, hiddenParts]);
+
+  const sunOpacityByStage = useMemo(() => {
+    const map = new Map<number, number>();
+    for (const st of stages) {
+      const stageHidden = hiddenParts.has(stageKey(st.id));
+      const sunHidden = stageHidden || hiddenParts.has(sunKey(st.id));
+      map.set(st.id, sunHidden ? 0 : 1);
+    }
+    return map;
+  }, [stages, hiddenParts]);
+
   const armCouplingSegments = useMemo(
     () =>
       buildArmArmCouplingSegments({
@@ -1651,6 +1861,252 @@ export function GearScene({
       }),
     [couplings, carrierPaths, gearVisualThickness]
   );
+
+  const armRingCouplingSegments = useMemo(
+    () =>
+      buildArmRingCouplingSegments({
+        couplings,
+        carrierPaths,
+        ringPaths,
+        plateThickness: CARRIER_PLATE_THICKNESS,
+        gearThickness: gearVisualThickness,
+        carrierZOffset: CARRIER_Z_OFFSET,
+        ringThickness: safeRingThickness,
+        pegRadius: CARRIER_PEG_RADIUS,
+        minCarrierRadius: CARRIER_CORE_OUTER_RADIUS,
+        detourClearance: CARRIER_PEG_RADIUS * 2.2,
+      }),
+    [couplings, carrierPaths, ringPaths, gearVisualThickness, safeRingThickness]
+  );
+
+  const ringCouplingSpans = useMemo(
+    () =>
+      buildRingRingCouplingSpans({
+        couplings,
+        ringPaths,
+        gearThickness: gearVisualThickness,
+        ringThickness: safeRingThickness,
+      }),
+    [couplings, ringPaths, gearVisualThickness, safeRingThickness]
+  );
+
+  const sunCouplingSpans = useMemo(
+    () =>
+      buildSunSunCouplingSpans({
+        couplings,
+        sunPaths,
+        shaftLength: SUN_SHAFT_LENGTH,
+      }),
+    [couplings, sunPaths]
+  );
+
+  const sunCoupledStages = useMemo(() => {
+    const set = new Set<number>();
+    sunCouplingSpans.forEach((span) => {
+      set.add(span.stageA);
+      set.add(span.stageB);
+    });
+    return set;
+  }, [sunCouplingSpans]);
+
+  const sunZByStage = useMemo(() => {
+    const map = new Map<number, number>();
+    sunPaths.forEach((entry) => map.set(entry.stageId, entry.z));
+    return map;
+  }, [sunPaths]);
+
+  const sunComponentStageLists = useMemo(() => {
+    if (sunCoupledStages.size === 0) return [];
+    const parent = new Map<number, number>();
+    sunCoupledStages.forEach((sid) => parent.set(sid, sid));
+
+    const find = (x: number): number => {
+      const p = parent.get(x);
+      if (p == null || p === x) return x;
+      const root = find(p);
+      parent.set(x, root);
+      return root;
+    };
+
+    const union = (a: number, b: number) => {
+      if (!parent.has(a) || !parent.has(b)) return;
+      const ra = find(a);
+      const rb = find(b);
+      if (ra !== rb) parent.set(ra, rb);
+    };
+
+    sunCouplingSpans.forEach((span) => union(span.stageA, span.stageB));
+
+    const groups = new Map<number, number[]>();
+    for (const id of parent.keys()) {
+      const root = find(id);
+      const list = groups.get(root);
+      if (list) list.push(id);
+      else groups.set(root, [id]);
+    }
+
+    const ordered: number[][] = [];
+    groups.forEach((list) => {
+      list.sort((a, b) => (sunZByStage.get(a) ?? 0) - (sunZByStage.get(b) ?? 0));
+      ordered.push(list);
+    });
+    return ordered;
+  }, [sunCoupledStages, sunCouplingSpans, sunZByStage]);
+
+  const sunComponentData = useMemo(() => {
+    const components = sunComponentStageLists.map((stages, idx) => {
+      const minZ = sunZByStage.get(stages[0]) ?? 0;
+      const maxZ = sunZByStage.get(stages[stages.length - 1]) ?? 0;
+      return {
+        id: idx,
+        stages,
+        minZ,
+        maxZ,
+        level: 0,
+        inner: 0,
+        outer: 0,
+      };
+    });
+
+    if (components.length === 0) {
+      return { components, stageToComponent: new Map<number, number>() };
+    }
+
+    const EPS = 1e-3;
+    const overlaps = (a: typeof components[number], b: typeof components[number]) =>
+      Math.max(a.minZ, b.minZ) < Math.min(a.maxZ, b.maxZ) - EPS;
+
+    const n = components.length;
+    const adj: number[][] = Array.from({ length: n }, () => []);
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        if (overlaps(components[i], components[j])) {
+          adj[i].push(j);
+          adj[j].push(i);
+        }
+      }
+    }
+
+    const visited = new Array(n).fill(false);
+    for (let i = 0; i < n; i++) {
+      if (visited[i]) continue;
+      const queue = [i];
+      const group: number[] = [];
+      visited[i] = true;
+      while (queue.length > 0) {
+        const cur = queue.pop() as number;
+        group.push(cur);
+        for (const next of adj[cur]) {
+          if (visited[next]) continue;
+          visited[next] = true;
+          queue.push(next);
+        }
+      }
+
+      group.sort((a, b) => components[a].minZ - components[b].minZ);
+      group.forEach((idx, level) => {
+        components[idx].level = level;
+      });
+    }
+
+    const levelStep = SUN_SHAFT_CLEARANCE + SUN_SHAFT_WALL;
+    components.forEach((comp) => {
+      comp.outer = SUN_SHAFT_OUTER_RADIUS + comp.level * levelStep;
+      comp.inner = Math.max(GEAR_HOLE_RADIUS, comp.outer - SUN_SHAFT_WALL);
+    });
+
+    const stageToComponent = new Map<number, number>();
+    components.forEach((comp) => comp.stages.forEach((sid) => stageToComponent.set(sid, comp.id)));
+
+    return { components, stageToComponent };
+  }, [sunComponentStageLists, sunZByStage]);
+
+  const sunPassThroughOuterByStage = useMemo(() => {
+    const pass = new Map<number, number>();
+    if (sunComponentData.components.length === 0) return pass;
+    const allStages = [...sunZByStage.entries()];
+    const levelStep = SUN_SHAFT_CLEARANCE + SUN_SHAFT_WALL;
+
+    for (const comp of sunComponentData.components) {
+      if (comp.stages.length < 2) continue;
+      for (let i = 0; i < comp.stages.length - 1; i++) {
+        const zA = sunZByStage.get(comp.stages[i]);
+        const zB = sunZByStage.get(comp.stages[i + 1]);
+        if (zA == null || zB == null) continue;
+        const zMin = Math.min(zA, zB);
+        const zMax = Math.max(zA, zB);
+        for (const [sid, z] of allStages) {
+          if (sunCoupledStages.has(sid)) continue;
+          if (z > zMin + 1e-3 && z < zMax - 1e-3) {
+            const neededOuter = comp.outer + levelStep;
+            const prev = pass.get(sid) ?? 0;
+            if (neededOuter > prev) pass.set(sid, neededOuter);
+          }
+        }
+      }
+    }
+    return pass;
+  }, [sunComponentData, sunZByStage, sunCoupledStages]);
+
+  const sunShaftRadiiByStage = useMemo(() => {
+    const map = new Map<number, { inner: number; outer: number }>();
+    for (const [sid] of sunZByStage) {
+      const compId = sunComponentData.stageToComponent.get(sid);
+      const comp = compId != null ? sunComponentData.components[compId] : null;
+      let outer = comp ? comp.outer : SUN_SHAFT_OUTER_RADIUS;
+      const passOuter = sunPassThroughOuterByStage.get(sid);
+      if (passOuter != null) outer = Math.max(outer, passOuter);
+      const inner = Math.max(GEAR_HOLE_RADIUS, outer - SUN_SHAFT_WALL);
+      map.set(sid, { inner, outer });
+    }
+    return map;
+  }, [sunZByStage, sunComponentData, sunPassThroughOuterByStage]);
+
+  const sunOverlapOuterByStage = useMemo(() => {
+    const map = new Map<number, number>();
+    if (sunComponentData.components.length === 0) return map;
+    const EPS = 1e-3;
+    for (const [sid, z] of sunZByStage) {
+      let maxOuter = 0;
+      for (const comp of sunComponentData.components) {
+        if (z + EPS >= comp.minZ && z - EPS <= comp.maxZ) {
+          maxOuter = Math.max(maxOuter, comp.outer);
+        }
+      }
+      if (maxOuter > 0) map.set(sid, maxOuter);
+    }
+    return map;
+  }, [sunComponentData, sunZByStage]);
+
+  const sunCouplingIntervals = useMemo(() => {
+    const intervals: {
+      stageA: number;
+      stageB: number;
+      zStart: number;
+      zEnd: number;
+      inner: number;
+      outer: number;
+    }[] = [];
+
+    for (const comp of sunComponentData.components) {
+      if (comp.stages.length < 2) continue;
+      for (let i = 0; i < comp.stages.length - 1; i++) {
+        const zA = sunZByStage.get(comp.stages[i]);
+        const zB = sunZByStage.get(comp.stages[i + 1]);
+        if (zA == null || zB == null) continue;
+        intervals.push({
+          stageA: comp.stages[i],
+          stageB: comp.stages[i + 1],
+          zStart: zA - SUN_SHAFT_LENGTH,
+          zEnd: zB - SUN_SHAFT_LENGTH,
+          inner: comp.inner,
+          outer: comp.outer,
+        });
+      }
+    }
+
+    return intervals;
+  }, [sunComponentData, sunZByStage]);
 
 
 
@@ -1731,6 +2187,103 @@ return (
           );
         })}
 
+        {armRingCouplingSegments.map((group) => {
+          const opacity = Math.min(
+            carrierOpacityByStage.get(group.armStage) ?? 1,
+            ringOpacityByStage.get(group.ringStage) ?? 1
+          );
+          if (opacity <= 0.001) return null;
+          const omega =
+            omegaByStage.get(group.armStage) ??
+            omegaByStage.get(group.ringStage) ??
+            0;
+          const resetKey =
+            carrierResetKeyByStage.get(group.armStage) ??
+            carrierResetKeyByStage.get(group.ringStage) ??
+            phaseResetToken;
+
+          return (
+            <RotZ
+              key={`arm-ring-cpl-${group.armStage}-${group.ringStage}`}
+              omega={omega}
+              resetOn={resetKey}
+            >
+              <group>
+                {group.segments.map((seg, idx) => (
+                  <CouplingRod
+                    key={idx}
+                    from={seg.from}
+                    to={seg.to}
+                    radius={CARRIER_PEG_RADIUS}
+                    color={CARRIER_COLOR}
+                    opacity={opacity}
+                  />
+                ))}
+                {group.elbows.map((elbow, idx) => (
+                  <CouplingElbow
+                    key={`arm-ring-elbow-${idx}`}
+                    at={elbow}
+                    radius={CARRIER_PEG_RADIUS}
+                    color={CARRIER_COLOR}
+                    opacity={opacity}
+                  />
+                ))}
+                {group.pads.map((pad, idx) => (
+                  <CouplingPad
+                    key={`arm-ring-pad-${idx}`}
+                    at={pad}
+                    radius={CARRIER_PAD_RADIUS}
+                    thickness={CARRIER_PLATE_THICKNESS}
+                    color={CARRIER_COLOR}
+                    opacity={opacity}
+                  />
+                ))}
+              </group>
+            </RotZ>
+          );
+        })}
+
+        {ringCouplingSpans.map((span) => {
+          const opacity = Math.min(
+            ringOpacityByStage.get(span.stageA) ?? 1,
+            ringOpacityByStage.get(span.stageB) ?? 1
+          );
+          if (opacity <= 0.001) return null;
+          return (
+            <RingCouplingBand
+              key={`ring-cpl-${span.stageA}-${span.stageB}`}
+              zStart={span.zStart}
+              zEnd={span.zEnd}
+              bendZ={span.bendZ}
+              rInnerA={span.rInnerA}
+              rOuterA={span.rOuterA}
+              rInnerB={span.rInnerB}
+              rOuterB={span.rOuterB}
+              color={COLORS.ring}
+              opacity={opacity}
+            />
+          );
+        })}
+
+        {sunCouplingIntervals.map((interval) => {
+          const opacity = Math.min(
+            sunOpacityByStage.get(interval.stageA) ?? 1,
+            sunOpacityByStage.get(interval.stageB) ?? 1
+          );
+          if (opacity <= 0.001) return null;
+          return (
+            <SunCouplingShaft
+              key={`sun-cpl-${interval.stageA}-${interval.stageB}`}
+              zStart={interval.zStart}
+              zEnd={interval.zEnd}
+              color={COLORS.sun}
+              opacity={opacity}
+              innerRadius={interval.inner}
+              outerRadius={interval.outer}
+            />
+          );
+        })}
+
         {layouts.map((stage) => {
           const sid = stage.stageId;
           const stageSignature = stage.signature;
@@ -1771,17 +2324,35 @@ return (
 	          const wb = rpmToRad(wb_rpm);
 	          const ws_local = rpmToRad(ws_rpm - wb_rpm);
 	          const wa_local = rpmToRad(wa_rpm - wb_rpm);
-	          const carrierResetKey = `${stageSignature}|carrier|pr${phaseResetToken}|vr${visibilityResetToken}`;
-	          const pathsForStage = carrierPaths.find(p => p.stageId === sid)?.paths ?? [];
-	          const carrierHidden = stageHidden || hiddenParts.has(carrierKey(sid));
+          const carrierResetKey = `${stageSignature}|carrier|pr${phaseResetToken}|vr${visibilityResetToken}`;
+          const pathsForStage = carrierPaths.find(p => p.stageId === sid)?.paths ?? [];
+          const carrierHidden = stageHidden || hiddenParts.has(carrierKey(sid));
           const carrierOpacity = carrierHidden ? 0 : 1;
+          const shaftRadii = sunShaftRadiiByStage.get(sid);
+          const shaftOuterR = shaftRadii?.outer ?? SUN_SHAFT_OUTER_RADIUS;
+          const overlapOuterR = sunOverlapOuterByStage.get(sid) ?? 0;
+          const carrierHoleR = Math.max(
+            GEAR_HOLE_RADIUS,
+            shaftOuterR + SUN_SHAFT_CLEARANCE,
+            overlapOuterR + SUN_SHAFT_CLEARANCE
+          );
+          const defaultCarrierHoleR = Math.max(GEAR_HOLE_RADIUS, SUN_SHAFT_OUTER_RADIUS + SUN_SHAFT_CLEARANCE);
+          const carrierWall = Math.max(0.5, CARRIER_CORE_OUTER_RADIUS - defaultCarrierHoleR);
+          const carrierOuterR = Math.max(CARRIER_CORE_OUTER_RADIUS, carrierHoleR + carrierWall);
 
           return (
             <group key={sid}>
               <RotZ omega={wb} resetOn={carrierResetKey}>
                 <group>
                   {pathsForStage.map((pts, i) => (
-                    <CarrierVisual key={i} anchors={pts} color={CARRIER_COLOR} opacity={carrierOpacity} />
+                    <CarrierVisual
+                      key={i}
+                      anchors={pts}
+                      color={CARRIER_COLOR}
+                      opacity={carrierOpacity}
+                      holeRadius={carrierHoleR}
+                      coreOuterRadius={carrierOuterR}
+                    />
                   ))}
                 </group>
 
@@ -1818,7 +2389,7 @@ return (
                           thickness={DISC_THICK}
                           phase={phase}
                           resetOn={sunResetToken}
-                          holeRadius={GEAR_HOLE_RADIUS}
+                          holeRadius={shaftRadii?.inner ?? GEAR_HOLE_RADIUS}
                           helixAngleRad={helixAngleFor("sun")}
                           backlashOverride={backlashForKind("sun")}
                           opacity={sunOpacity}
@@ -1830,6 +2401,8 @@ return (
                           phase={phase}
                           resetOn={sunResetToken}
                           opacity={sunOpacity}
+                          innerRadius={shaftRadii?.inner}
+                          outerRadius={shaftRadii?.outer}
                         />
                       </group>
                     );

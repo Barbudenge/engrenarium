@@ -819,31 +819,7 @@ const topologyKey = useMemo(() => {
 
   const renderResultsBody = () => (
     <>
-      {Object.keys(montagem).length > 0 && (
-        <div
-          style={{
-            ...small,
-            color: hasImpossible ? "#ff6b6b" : "var(--muted-foreground)",
-            textAlign: "right",
-            marginTop: 2,
-            minWidth: 0,
-            flex: "1 1 auto",
-            overflowWrap: "anywhere",
-          }}
-        >
-          {Object.entries(montagem).map(([id, st]) => (
-            <div key={id}>
-              <b>{t("planetary")} {id}:</b>{" "}
-              {st.tipo === "aberta" ? t("stageOpen")
-               : st.tipo === "reto" ? t("armStraight")
-               : st.tipo === "curvo" ? t("armStepped")
-               : (lang === "en" ? "Carrier" : "Braço")}
-              {" — "}
-              {lang === "en" ? (st as any).mensagem_en ?? st.mensagem : st.mensagem}
-            </div>
-          ))}
-        </div>
-      )}
+      {/* mensagem de montagem removida a pedido */}
       {underdeterminedMessage && (
         <div style={{ ...small, color: "#fca5a5", marginTop: 4 }}>
           <b>{lang === "en" ? "Error" : "Erro"}:</b> {underdeterminedMessage}
