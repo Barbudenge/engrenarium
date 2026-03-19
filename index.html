@@ -26,14 +26,22 @@
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://barbudenge.github.io/engrenarium/" />
 
-    <script
-      async
-      src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-5777194849710689"
-      crossorigin="anonymous"
-    ></script>
+    <script>
+      (function () {
+        var host = window.location.hostname;
+        var isLocal = host === "localhost" || host === "127.0.0.1" || host === "::1";
+        if (isLocal) return;
+
+        var script = document.createElement("script");
+        script.async = true;
+        script.src = "https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-5777194849710689";
+        script.crossOrigin = "anonymous";
+        document.head.appendChild(script);
+      })();
+    </script>
 
     <link rel="icon" href="/engrenarium/favicon.ico" />
-    <script type="module" crossorigin src="/engrenarium/assets/index-D1lTwAVw.js"></script>
+    <script type="module" crossorigin src="/engrenarium/assets/index-DroUFBRq.js"></script>
     <link rel="stylesheet" crossorigin href="/engrenarium/assets/index-9iLdfAny.css">
   </head>
 
