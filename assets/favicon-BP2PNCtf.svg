@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" aria-hidden="true">
+  <defs>
+    <linearGradient id="gearGradient" x1="0%" x2="100%" y1="0%" y2="100%">
+      <stop offset="0%" stop-color="#7dd3fc" />
+      <stop offset="100%" stop-color="#2563eb" />
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="#0f172a" />
+  <g fill="url(#gearGradient)">
+    <rect x="29" y="4" width="6" height="12" rx="2" />
+    <rect x="29" y="48" width="6" height="12" rx="2" />
+    <rect x="4" y="29" width="12" height="6" rx="2" />
+    <rect x="48" y="29" width="12" height="6" rx="2" />
+    <rect x="12.8" y="10.4" width="6" height="12" rx="2" transform="rotate(-45 15.8 16.4)" />
+    <rect x="45.2" y="41.6" width="6" height="12" rx="2" transform="rotate(-45 48.2 47.6)" />
+    <rect x="41.6" y="12.8" width="12" height="6" rx="2" transform="rotate(-45 47.6 15.8)" />
+    <rect x="10.4" y="45.2" width="12" height="6" rx="2" transform="rotate(-45 16.4 48.2)" />
+  </g>
+  <circle cx="32" cy="32" r="18" fill="none" stroke="#e5e7eb" stroke-width="6" />
+  <circle cx="32" cy="32" r="7" fill="#38bdf8" />
+</svg>
