@@ -47,10 +47,39 @@
         "url": "https://barbudenge.github.io/engrenarium/",
         "applicationCategory": "EngineeringApplication",
         "operatingSystem": "Web",
-        "description": "Planetary gear simulator for mechanical engineering",
+        "browserRequirements": "Requires JavaScript and a modern web browser",
+        "isAccessibleForFree": true,
+        "description": "Interactive planetary gear simulator for visualizing gear arrangements, calculating speed relationships, and studying simple and multi-stage planetary systems.",
+        "featureList": [
+          "Interactive planetary gear visualization",
+          "Gear tooth and speed parameter adjustment",
+          "Input, output, fixed element, and carrier analysis",
+          "Simple and multi-stage planetary system study",
+          "Browser-based engineering education"
+        ],
         "inLanguage": "en"
       }
     </script>
+
+    <style>
+      #root { height: auto !important; min-height: 100dvh; }
+      .engr-seo-content { padding: 54px 24px 64px; color: #334155; background: #f8fafc; border-top: 1px solid #e2e8f0; font-family: Arial, sans-serif; }
+      .engr-seo-inner { width: min(1120px, 100%); margin: 0 auto; }
+      .engr-seo-eyebrow { margin: 0 0 8px; color: #2563eb; font-size: 11px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+      .engr-seo-content h2 { max-width: 840px; margin: 0; color: #0f172a; font-size: clamp(25px, 3vw, 38px); line-height: 1.15; }
+      .engr-seo-intro { max-width: 880px; margin: 14px 0 0; color: #64748b; font-size: 16px; line-height: 1.7; }
+      .engr-seo-grid { margin-top: 28px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+      .engr-seo-card { padding: 20px; background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; box-shadow: 0 8px 24px rgba(15, 23, 42, .04); }
+      .engr-seo-card h3 { margin: 0 0 10px; color: #1e293b; font-size: 17px; }
+      .engr-seo-card p, .engr-seo-card li { color: #64748b; font-size: 14px; line-height: 1.65; }
+      .engr-seo-card p { margin: 0; }
+      .engr-seo-card ul { margin: 0; padding-left: 18px; }
+      .engr-seo-links { margin-top: 20px; display: flex; flex-wrap: wrap; gap: 10px 18px; }
+      .engr-seo-links a { color: #2563eb; font-size: 14px; font-weight: 700; text-decoration: none; }
+      .engr-seo-links a:hover { text-decoration: underline; }
+      .engr-noscript { margin: 0; padding: 12px 24px; color: #fff; background: #7c2d12; font: 600 14px/1.5 Arial, sans-serif; text-align: center; }
+      @media (max-width: 800px) { .engr-seo-grid { grid-template-columns: 1fr; } .engr-seo-content { padding: 40px 18px 48px; } }
+    </style>
 
     <script
       async
@@ -66,5 +95,43 @@
 
   <body>
     <div id="root"></div>
+
+    <noscript><p class="engr-noscript">Engrenarium requires JavaScript for the interactive simulation. The technical overview below remains available without it.</p></noscript>
+
+    <section class="engr-seo-content" aria-labelledby="engrenarium-about-title">
+      <div class="engr-seo-inner">
+        <p class="engr-seo-eyebrow">Engrenarium engineering tool</p>
+        <h2 id="engrenarium-about-title">Interactive planetary gear simulation and kinematic analysis</h2>
+        <p class="engr-seo-intro">Engrenarium Web is a free browser-based simulator for mechanical engineering education and preliminary planetary gear analysis. It connects an interactive gear model with tooth counts, angular speeds, constraints, and transmission relationships so the behavior of an epicyclic system can be interpreted visually.</p>
+
+        <div class="engr-seo-grid">
+          <article class="engr-seo-card">
+            <h3>What the simulator shows</h3>
+            <ul>
+              <li>Visual relationships between the sun gear, planet gears, ring gear, and carrier.</li>
+              <li>The effect of changing tooth counts and operating conditions.</li>
+              <li>Simple and multi-stage arrangements for conceptual comparison.</li>
+            </ul>
+          </article>
+
+          <article class="engr-seo-card">
+            <h3>From parameters to motion</h3>
+            <p>Use the controls to describe a planetary arrangement and compare input, output, and fixed-element choices. The visualization helps explain relative motion around the carrier and supports checking whether the calculated speed relationship agrees with the modeled mechanism.</p>
+          </article>
+
+          <article class="engr-seo-card">
+            <h3>Engineering education and applications</h3>
+            <p>Engrenarium supports classroom demonstrations, individual study, and early transmission analysis. It complements the Barbudenge articles on gear trains, planetary kinematics, compound systems, differentials, and transmission examples.</p>
+          </article>
+        </div>
+
+        <nav class="engr-seo-links" aria-label="Engrenarium language and related technical links">
+          <a href="https://barbudenge.github.io/engrenarium/pt-br/" lang="pt-BR">Versão em português</a>
+          <a href="https://barbudenge.github.io/projects/">Barbudenge projects</a>
+          <a href="https://barbudenge.github.io/artigos/engrenagens-planetarias.html">Planetary gear fundamentals</a>
+          <a href="https://barbudenge.github.io/artigos/trens-engrenagens-simples-compostos.html">Gear train fundamentals</a>
+        </nav>
+      </div>
+    </section>
   </body>
 </html>

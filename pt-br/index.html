@@ -47,10 +47,39 @@
         "url": "https://barbudenge.github.io/engrenarium/pt-br/",
         "applicationCategory": "EngineeringApplication",
         "operatingSystem": "Web",
-        "description": "Simulador de engrenagens planetárias para engenharia mecânica",
+        "browserRequirements": "Requer JavaScript e um navegador moderno",
+        "isAccessibleForFree": true,
+        "description": "Simulador interativo de engrenagens planetárias para visualizar arranjos, calcular relações de velocidade e estudar sistemas planetários simples e multiestágio.",
+        "featureList": [
+          "Visualização interativa de engrenagens planetárias",
+          "Ajuste de dentes e parâmetros de velocidade",
+          "Análise de entrada, saída, elemento fixo e braço",
+          "Estudo de sistemas planetários simples e multiestágio",
+          "Ferramenta educacional de engenharia no navegador"
+        ],
         "inLanguage": "pt-BR"
       }
     </script>
+
+    <style>
+      #root { height: auto !important; min-height: 100dvh; }
+      .engr-seo-content { padding: 54px 24px 64px; color: #334155; background: #f8fafc; border-top: 1px solid #e2e8f0; font-family: Arial, sans-serif; }
+      .engr-seo-inner { width: min(1120px, 100%); margin: 0 auto; }
+      .engr-seo-eyebrow { margin: 0 0 8px; color: #2563eb; font-size: 11px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+      .engr-seo-content h2 { max-width: 840px; margin: 0; color: #0f172a; font-size: clamp(25px, 3vw, 38px); line-height: 1.15; }
+      .engr-seo-intro { max-width: 880px; margin: 14px 0 0; color: #64748b; font-size: 16px; line-height: 1.7; }
+      .engr-seo-grid { margin-top: 28px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+      .engr-seo-card { padding: 20px; background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; box-shadow: 0 8px 24px rgba(15, 23, 42, .04); }
+      .engr-seo-card h3 { margin: 0 0 10px; color: #1e293b; font-size: 17px; }
+      .engr-seo-card p, .engr-seo-card li { color: #64748b; font-size: 14px; line-height: 1.65; }
+      .engr-seo-card p { margin: 0; }
+      .engr-seo-card ul { margin: 0; padding-left: 18px; }
+      .engr-seo-links { margin-top: 20px; display: flex; flex-wrap: wrap; gap: 10px 18px; }
+      .engr-seo-links a { color: #2563eb; font-size: 14px; font-weight: 700; text-decoration: none; }
+      .engr-seo-links a:hover { text-decoration: underline; }
+      .engr-noscript { margin: 0; padding: 12px 24px; color: #fff; background: #7c2d12; font: 600 14px/1.5 Arial, sans-serif; text-align: center; }
+      @media (max-width: 800px) { .engr-seo-grid { grid-template-columns: 1fr; } .engr-seo-content { padding: 40px 18px 48px; } }
+    </style>
 
     <script
       async
@@ -66,5 +95,43 @@
 
   <body>
     <div id="root"></div>
+
+    <noscript><p class="engr-noscript">O Engrenarium requer JavaScript para a simulação interativa. A visão geral técnica abaixo continua disponível sem ele.</p></noscript>
+
+    <section class="engr-seo-content" aria-labelledby="engrenarium-about-title">
+      <div class="engr-seo-inner">
+        <p class="engr-seo-eyebrow">Ferramenta de engenharia Engrenarium</p>
+        <h2 id="engrenarium-about-title">Simulação interativa e análise cinemática de engrenagens planetárias</h2>
+        <p class="engr-seo-intro">O Engrenarium Web é um simulador gratuito no navegador para ensino de engenharia mecânica e análise preliminar de engrenagens planetárias. Ele conecta um modelo interativo aos números de dentes, velocidades angulares, vínculos e relações de transmissão para que o comportamento do sistema epicicloidal possa ser interpretado visualmente.</p>
+
+        <div class="engr-seo-grid">
+          <article class="engr-seo-card">
+            <h3>O que o simulador mostra</h3>
+            <ul>
+              <li>Relações visuais entre engrenagem solar, planetas, anelar e braço.</li>
+              <li>O efeito da mudança dos números de dentes e das condições de operação.</li>
+              <li>Arranjos simples e multiestágio para comparação conceitual.</li>
+            </ul>
+          </article>
+
+          <article class="engr-seo-card">
+            <h3>Dos parâmetros ao movimento</h3>
+            <p>Use os controles para descrever um arranjo planetário e comparar escolhas de entrada, saída e elemento fixo. A visualização ajuda a explicar o movimento relativo ao braço e a verificar se a relação de velocidade calculada corresponde ao mecanismo modelado.</p>
+          </article>
+
+          <article class="engr-seo-card">
+            <h3>Ensino e aplicações em engenharia</h3>
+            <p>O Engrenarium apoia demonstrações em aula, estudo individual e análise inicial de transmissões. A ferramenta complementa os artigos do Barbudenge sobre trens de engrenagens, cinemática planetária, sistemas compostos, diferenciais e exemplos de transmissões.</p>
+          </article>
+        </div>
+
+        <nav class="engr-seo-links" aria-label="Idioma e links técnicos relacionados ao Engrenarium">
+          <a href="https://barbudenge.github.io/engrenarium/" lang="en">English version</a>
+          <a href="https://barbudenge.github.io/projects/pt-br/">Projetos do Barbudenge</a>
+          <a href="https://barbudenge.github.io/pt-br/artigos/engrenagens-planetarias.html">Fundamentos de engrenagens planetárias</a>
+          <a href="https://barbudenge.github.io/pt-br/artigos/trens-engrenagens-simples-compostos.html">Fundamentos de trens de engrenagens</a>
+        </nav>
+      </div>
+    </section>
   </body>
 </html>
